@@ -48,6 +48,14 @@ Run with Electron:
 npm start
 
 
+## 🔑 Login Information - بيانات الدخول
+
+To access the system, use the following default credentials:
+
+- **Username:** admin  
+- **Password:** password  
+
+
 ![Sales Page](https://github.com/user-attachments/assets/cbfc6380-6798-4ee4-aad0-11c58b8109e6)
 ![Sales Page](https://github.com/user-attachments/assets/2d374ddb-0fe4-4bc1-8d1c-a64a93697e17)
 ![Sales Page](https://github.com/user-attachments/assets/a8416161-62e5-43ef-b88c-c69ec08211e5)
