@@ -2,7 +2,7 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# POS System - نظام نقاط البيع وإدارة المخزون
+# POS System - باللغه العربيه نظام نقاط البيع وإدارة المخزون
 
 A modern Point of Sale (POS) and Inventory Management system built with **React + Vite**, and packaged as a desktop application using **Electron**.  
 نظام حديث لإدارة نقاط البيع والمخزون، مبني باستخدام **React + Vite**، ويمكن تشغيله كتطبيق سطح مكتب عبر **Electron**.
@@ -10,6 +10,7 @@ A modern Point of Sale (POS) and Inventory Management system built with **React 
 ---
 
 ## ✨ Features - المميزات
+يدعم اللغه العربيه بالكامل 
 - Manage products (Add / Edit / Delete)  
   إدارة المنتجات (إضافة / تعديل / حذف)  
 - Record sales with automatic invoice generation  
