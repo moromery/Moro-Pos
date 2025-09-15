@@ -28,6 +28,13 @@ const translations = {
     appLanguage: 'لغة التطبيق',
     languageArabic: 'العربية',
     languageEnglish: 'English',
+    currencySettings: 'إعدادات العملة',
+    appCurrency: 'عملة التطبيق',
+    saveCurrency: 'حفظ العملة',
+    currencyEGP: 'جنيه مصري (EGP)',
+    currencyUSD: 'دولار أمريكي (USD)',
+    currencyEUR: 'يورو (EUR)',
+    currencySAR: 'ريال سعودي (SAR)',
     generalSettings: 'إعدادات عامة',
     taxRate: 'معدل الضريبة',
     showTaxInReceipt: 'إظهار الضريبة في الفاتورة',
@@ -49,13 +56,6 @@ const translations = {
     roleCashier: 'كاشير',
     edit: 'تعديل',
     delete: 'حذف',
-    dataManagement: 'إدارة البيانات',
-    backupAndRestore: 'النسخ الاحتياطي والاستعادة',
-    backupDescription: 'يمكنك تصدير جميع بيانات التطبيق (المنتجات، المبيعات، العملاء، إلخ) إلى ملف واحد للحفظ. يمكنك استعادة هذه البيانات لاحقًا.',
-    exportBackup: 'تصدير نسخة احتياطية',
-    importBackup: 'استيراد نسخة احتياطية',
-    importWarning: "تحذير: سيؤدي استيراد ملف جديد إلى الكتابة فوق جميع بياناتك الحالية. هل أنت متأكد أنك تريد المتابعة؟",
-    importError: "خطأ في قراءة الملف. تأكد من أنه ملف نسخ احتياطي صالح.",
     confirmDelete: "تأكيد الحذف",
     deleteUserConfirmation: 'هل أنت متأكد من حذف المستخدم "{0}"؟ هذا الإجراء لا يمكن التراجع عنه.',
     cancel: "إلغاء",
@@ -68,6 +68,48 @@ const translations = {
     usernameCannotBeChanged: "لا يمكن تغيير اسم المستخدم.",
     leaveBlankToKeep: "اتركه فارغاً لعدم التغيير",
     save: "حفظ",
+    networkSyncSettings: "مزامنة الشبكة",
+    networkSyncDescription: "لتمكين المزامنة الفورية بين الأجهزة، قم بتشغيل خادم المزامنة على جهاز رئيسي وأدخل عنوانه هنا على جميع الأجهزة الأخرى.",
+    serverUrlLabel: "عنوان خادم المزامنة",
+    serverUrlPlaceholder: "مثال: ws://192.168.1.5:8080",
+    connectionStatusLabel: "حالة الاتصال",
+    statusConnected: "متصل",
+    statusConnecting: "جاري الاتصال...",
+    statusDisconnected: "غير متصل",
+    saveServerUrlButton: "حفظ وتوصيل",
+    dataManagement: "إدارة البيانات",
+    dataManagementDescription: "تصدير جميع بياناتك في ملف واحد للاحتفاظ بنسخة احتياطية، أو استيراد ملف نسخة احتياطية لاستعادة البيانات. تحذير: الاستيراد سيحذف جميع البيانات الحالية.",
+    exportData: "تصدير البيانات",
+    importData: "استيراد البيانات",
+    importConfirmMessage: "تحذير! سيؤدي استيراد البيانات إلى حذف جميع البيانات الحالية بشكل نهائي واستبدالها بالبيانات الموجودة في ملف النسخة الاحتياطية. هل أنت متأكد من المتابعة؟",
+    restoreConfirmMessage: "هل أنت متأكد من أنك تريد استعادة النسخة الاحتياطية من {0}؟ سيتم حذف جميع البيانات الحالية.",
+    autoBackupTitle: "النسخ الاحتياطي اليومي التلقائي",
+    autoBackupTimeSetting: "توقيت النسخ الاحتياطي التلقائي",
+    autoBackupTimeDescription: "اختر الوقت الذي سيتم فيه إنشاء النسخة الاحتياطية اليومية. سيتم تشغيلها عند فتح البرنامج بعد هذا الوقت.",
+    saveBackupTime: "حفظ التوقيت",
+    autoBackupDescription: "يقوم النظام تلقائيًا بإنشاء نسخة احتياطية يوميًا ويحتفظ بآخر 7 نسخ. يمكنك استعادة أي منها أو تنزيلها.",
+    noAutoBackups: "لا توجد نسخ احتياطية تلقائية متاحة.",
+    backupDate: "نسخة يوم: {0}",
+    restore: "استعادة",
+    download: "تنزيل",
+    confirmActionTitle: "تأكيد الإجراء",
+    importSuccess: "تم استيراد البيانات بنجاح! سيتم إعادة تحميل التطبيق.",
+    importFailed: "فشل الاستيراد: {0}",
+    exportFailed: "فشل التصدير: {0}",
+    backupNotFound: "لم يتم العثور على النسخة الاحتياطية.",
+    settingsAutoFileBackup: "النسخ الاحتياطي التلقائي للملفات",
+    settingsAutoFileBackupDesc: "اختر مجلدًا على جهاز الكمبيوتر الخاص بك لحفظ النسخ الاحتياطية اليومية تلقائيًا. سيطلب المتصفح الإذن مرة واحدة.",
+    settingsChooseFolder: "اختر مجلد",
+    settingsSelectedFolder: "المجلد المختار",
+    settingsClearSelection: "مسح الاختيار",
+    settingsFolderSetSuccess: "تم تعيين مجلد النسخ الاحتياطي بنجاح!",
+    settingsFolderCleared: "تم مسح اختيار مجلد النسخ الاحتياطي.",
+    settingsFileSystemNotSupported: "الميزة غير مدعومة",
+    settingsFileSystemNotSupportedDesc: "هذه الميزة متاحة فقط في المتصفحات الحديثة على أجهزة الكمبيوتر المكتبية مثل Chrome و Edge.",
+    settingsFileSystemInsecure: "مطلوب سياق آمن (Secure Context)",
+    settingsFileSystemInsecureDesc: "لأسباب أمنية، تعمل هذه الميزة فقط عند الوصول للتطبيق عبر `localhost` أو اتصال `https`. الوصول عبر عنوان IP للشبكة المحلية (مثل http://192.168.x.x) غير مدعوم.",
+    autoBackupSavedToFile: "تم حفظ النسخة الاحتياطية التلقائية أيضًا في المجلد الذي اخترته.",
+    autoBackupFileSaveError: "تعذر حفظ النسخة الاحتياطية في المجلد المختار. يرجى التحقق من الأذونات.",
     // Login Page
     loginWelcome: "مرحباً بعودتك! الرجاء تسجيل الدخول.",
     loginButton: "تسجيل الدخول",
@@ -121,8 +163,12 @@ const translations = {
     sessionClosedBody: "يجب عليك بدء جلسة عمل جديدة من صفحة إدارة الجلسات لتتمكن من تسجيل المبيعات.",
     cashCustomer: "زبون نقدي",
     productNotFound: "المنتج غير موجود",
+    productNotFoundInStock: "المنتج '{0}' غير موجود في المخزون.",
+    insufficientStockError: "فشل إتمام البيع للمنتج \"{0}\": الكمية المطلوبة ({1}) أكبر من الكمية المتاحة ({2}).",
     deferredSaleCashCustomerError: 'لا يمكن البيع الآجل لـ "زبون نقدي". الرجاء إدخال اسم عميل.',
     deferredSaleNoCreateError: "لا يمكن إتمام البيع الآجل بدون تسجيل العميل.",
+    saleCompletionError: "حدث خطأ أثناء إتمام البيع. الرجاء المحاولة مرة أخرى.",
+    saleFailedWithReason: "فشل إتمام البيع: {0}",
     // POS Modals
     weightEntryTitle: "إدخال الوزن لـ: {0}",
     pricePerUnit: "السعر لكل {0}: {1}",
@@ -157,9 +203,6 @@ const translations = {
     addSupplierReturnError: "فشل في إضافة مرتجع المورد.",
     supplierReturnNotFound: "مرتجع المورد غير موجود.",
     deleteSupplierReturnError: "فشل في حذف مرتجع المورد.",
-    importSuccess: "تم استيراد البيانات بنجاح. سيتم إعادة تحميل الصفحة.",
-    importInvalidFile: "ملف غير صالح. تأكد من أنه ملف نسخ احتياطي صحيح.",
-    importProcessError: "حدث خطأ أثناء معالجة الاستيراد.",
     cannotDeleteCurrentUser: "لا يمكنك حذف المستخدم الحالي.",
     noCurrentUser: "لا يوجد مستخدم حالي.",
     sessionAlreadyActive: "توجد جلسة عمل نشطة بالفعل.",
@@ -445,6 +488,17 @@ const translations = {
     sessionSummaryNoSales: "لا توجد مبيعات",
     sessionSummaryExpensesDetails: "تفاصيل المصروفات ({0})",
     sessionSummaryNoExpenses: "لا توجد مصروفات",
+    // FIX: Add translations for Attendance page
+    attendanceStatusCheckedIn: 'مسجل حضور',
+    hours: 'ساعات',
+    minutes: 'دقائق',
+    attendanceTableUser: 'المستخدم',
+    attendanceTableCheckIn: 'وقت الحضور',
+    attendanceTableCheckOut: 'وقت الانصراف',
+    attendanceTableDuration: 'المدة',
+    attendanceLogTitle: 'سجل الحضور والانصراف',
+    attendanceFilterAllUsers: 'كل المستخدمين',
+    attendanceNoRecords: 'لا توجد سجلات حضور لعرضها.',
   },
   en: {
     loadingData: "Loading Data",
@@ -472,6 +526,13 @@ const translations = {
     appLanguage: 'Application Language',
     languageArabic: 'العربية',
     languageEnglish: 'English',
+    currencySettings: 'Currency Settings',
+    appCurrency: 'Application Currency',
+    saveCurrency: 'Save Currency',
+    currencyEGP: 'Egyptian Pound (EGP)',
+    currencyUSD: 'US Dollar (USD)',
+    currencyEUR: 'Euro (EUR)',
+    currencySAR: 'Saudi Riyal (SAR)',
     generalSettings: 'General Settings',
     taxRate: 'Tax Rate',
     showTaxInReceipt: 'Show Tax in Receipt',
@@ -493,13 +554,6 @@ const translations = {
     roleCashier: 'Cashier',
     edit: 'Edit',
     delete: 'Delete',
-    dataManagement: 'Data Management',
-    backupAndRestore: 'Backup and Restore',
-    backupDescription: 'You can export all application data (products, sales, customers, etc.) to a single file for backup. You can restore this data later.',
-    exportBackup: 'Export Backup',
-    importBackup: 'Import Backup',
-    importWarning: "Warning: Importing a new file will overwrite all your current data. Are you sure you want to continue?",
-    importError: "Error reading file. Make sure it's a valid backup file.",
     confirmDelete: "Confirm Deletion",
     deleteUserConfirmation: 'Are you sure you want to delete the user "{0}"? This action cannot be undone.',
     cancel: "Cancel",
@@ -512,6 +566,48 @@ const translations = {
     usernameCannotBeChanged: "Username cannot be changed.",
     leaveBlankToKeep: "Leave blank to keep unchanged",
     save: "Save",
+    networkSyncSettings: "Network Sync",
+    networkSyncDescription: "To enable real-time sync between devices, run the sync server on a main computer and enter its address here on all other devices.",
+    serverUrlLabel: "Sync Server URL",
+    serverUrlPlaceholder: "e.g., ws://192.168.1.5:8080",
+    connectionStatusLabel: "Connection Status",
+    statusConnected: "Connected",
+    statusConnecting: "Connecting...",
+    statusDisconnected: "Disconnected",
+    saveServerUrlButton: "Save & Connect",
+    dataManagement: "Data Management",
+    dataManagementDescription: "Export all your data into a single file for backup, or import a backup file to restore data. Warning: Importing will delete all current data.",
+    exportData: "Export Data",
+    importData: "Import Data",
+    importConfirmMessage: "Warning! Importing data will permanently delete all current data and replace it with the data from the backup file. Are you sure you want to continue?",
+    restoreConfirmMessage: "Are you sure you want to restore the backup from {0}? All current data will be deleted.",
+    autoBackupTitle: "Automatic Daily Backups",
+    autoBackupTimeSetting: "Automatic Backup Time",
+    autoBackupTimeDescription: "Select the time for the daily backup. It will run when the app is opened after this time.",
+    saveBackupTime: "Save Time",
+    autoBackupDescription: "The system automatically creates a daily backup and keeps the last 7 copies. You can restore or download any of them.",
+    noAutoBackups: "No automatic backups available.",
+    backupDate: "Backup from: {0}",
+    restore: "Restore",
+    download: "Download",
+    confirmActionTitle: "Confirm Action",
+    importSuccess: "Data imported successfully! The application will now reload.",
+    importFailed: "Import failed: {0}",
+    exportFailed: "Export failed: {0}",
+    backupNotFound: "Backup not found.",
+    settingsAutoFileBackup: "Automatic File Backup",
+    settingsAutoFileBackupDesc: "Select a folder on your computer to automatically save daily backups. The browser will ask for permission once.",
+    settingsChooseFolder: "Choose Folder",
+    settingsSelectedFolder: "Selected Folder",
+    settingsClearSelection: "Clear",
+    settingsFolderSetSuccess: "Backup folder set successfully!",
+    settingsFolderCleared: "Backup folder selection cleared.",
+    settingsFileSystemNotSupported: "Feature Not Supported",
+    settingsFileSystemNotSupportedDesc: "This feature is only available in modern desktop browsers like Chrome and Edge.",
+    settingsFileSystemInsecure: "Secure Context Required",
+    settingsFileSystemInsecureDesc: "For security, this feature only works when the app is accessed via `localhost` or an `https` connection. Accessing via a local network IP address (e.g., http://192.168.x.x) is not supported.",
+    autoBackupSavedToFile: "Automatic backup also saved to your chosen folder.",
+    autoBackupFileSaveError: "Could not save backup to the selected folder. Please check permissions.",
     // Login Page
     loginWelcome: "Welcome back! Please sign in.",
     loginButton: "Sign In",
@@ -565,9 +661,13 @@ const translations = {
     sessionClosedBody: "You must start a new work session from the Session Management page to be able to record sales.",
     cashCustomer: "Cash Customer",
     productNotFound: "Product not found",
+    productNotFoundInStock: "Product '{0}' could not be found in stock.",
+    insufficientStockError: "Failed to complete sale for product \"{0}\": Requested quantity ({1}) is greater than available quantity ({2}).",
     deferredSaleCashCustomerError: "Deferred sale is not allowed for 'Cash Customer'. Please enter a customer name.",
     deferredSaleNoCreateError: "Cannot complete a deferred sale without registering the customer.",
-    // POS Modals
+    saleCompletionError: "An error occurred while completing the sale. Please try again.",
+    saleFailedWithReason: "Sale failed: {0}",
+     // POS Modals
     weightEntryTitle: "Enter Weight for: {0}",
     pricePerUnit: "Price per {0}: {1}",
     weightPlaceholder: "Weight in ({0})",
@@ -601,9 +701,6 @@ const translations = {
     addSupplierReturnError: "Failed to add supplier return.",
     supplierReturnNotFound: "Supplier return not found.",
     deleteSupplierReturnError: "Failed to delete supplier return.",
-    importSuccess: "Data imported successfully. The page will now reload.",
-    importInvalidFile: "Invalid file. Make sure it's a valid backup file.",
-    importProcessError: "An error occurred while processing the import.",
     cannotDeleteCurrentUser: "You cannot delete the current user.",
     noCurrentUser: "No current user.",
     sessionAlreadyActive: "A work session is already active.",
@@ -889,6 +986,17 @@ const translations = {
     sessionSummaryNoSales: "No sales",
     sessionSummaryExpensesDetails: "Expenses Details ({0})",
     sessionSummaryNoExpenses: "No expenses",
+    // FIX: Add translations for Attendance page
+    attendanceStatusCheckedIn: 'Checked In',
+    hours: 'hours',
+    minutes: 'minutes',
+    attendanceTableUser: 'User',
+    attendanceTableCheckIn: 'Check-In Time',
+    attendanceTableCheckOut: 'Check-Out Time',
+    attendanceTableDuration: 'Duration',
+    attendanceLogTitle: 'Attendance Log',
+    attendanceFilterAllUsers: 'All Users',
+    attendanceNoRecords: 'No attendance records to display.',
   }
 };
 
@@ -898,6 +1006,8 @@ type Language = 'ar' | 'en';
 interface LanguageContextType {
   language: Language;
   setLanguage: (language: Language) => void;
+  currency: string;
+  setCurrency: (currency: string) => void;
   t: (key: TranslationKey, ...args: any[]) => string;
 }
 
@@ -905,13 +1015,14 @@ const LanguageContext = createContext<LanguageContextType | undefined>(undefined
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguageState] = useState<Language>('ar');
+  const [currency, setCurrencyState] = useState<string>('EGP');
 
   useEffect(() => {
-    const loadLanguage = async () => {
+    const loadSettings = async () => {
       try {
-        const setting = await db.settings.get('language');
-        if (setting && (setting.value === 'ar' || setting.value === 'en')) {
-          const lang = setting.value as Language;
+        const langSetting = await db.settings.get('language');
+        if (langSetting && (langSetting.value === 'ar' || langSetting.value === 'en')) {
+          const lang = langSetting.value as Language;
           setLanguageState(lang);
           document.documentElement.lang = lang;
           document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
@@ -920,16 +1031,24 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             document.documentElement.dir = 'rtl';
             await db.settings.put({ key: 'language', value: 'ar' });
         }
+
+        const currencySetting = await db.settings.get('currency');
+        if (currencySetting && typeof currencySetting.value === 'string') {
+          setCurrencyState(currencySetting.value);
+        } else {
+            await db.settings.put({ key: 'currency', value: 'EGP' });
+        }
+
       } catch (error) {
-          console.error("Failed to load language setting:", error);
+          console.error("Failed to load settings:", error);
           document.documentElement.lang = 'ar';
           document.documentElement.dir = 'rtl';
       }
     };
-    db.on('ready', loadLanguage);
+    db.on('ready', loadSettings);
 
     return () => {
-        db.on('ready').unsubscribe(loadLanguage);
+        db.on('ready').unsubscribe(loadSettings);
     }
   }, []);
 
@@ -938,6 +1057,11 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLanguageState(lang);
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  }, []);
+  
+  const setCurrency = useCallback(async (curr: string) => {
+    await db.settings.put({ key: 'currency', value: curr });
+    setCurrencyState(curr);
   }, []);
 
   const t = (key: TranslationKey, ...args: any[]): string => {
@@ -951,7 +1075,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider value={{ language, setLanguage, currency, setCurrency, t }}>
       {children}
     </LanguageContext.Provider>
   );

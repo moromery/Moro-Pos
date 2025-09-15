@@ -8,8 +8,6 @@ import { logo } from '../assets/logo';
 interface SidebarProps {
   activePage: Page;
   setActivePage: (page: Page) => void;
-  notifications: Notification[];
-  dismissNotification: (id: string) => void;
   currentUser: User | null;
   logout: () => void;
 }
@@ -30,9 +28,10 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, currentUse
         <div className="text-center p-3 bg-gray-50 rounded-lg">
             <p className="font-semibold text-gray-800 text-lg">{t('sidebarWelcome', currentUser.username)}</p>
             <p className="text-sm text-gray-500 capitalize bg-blue-100 text-blue-700 font-medium inline-block px-2 py-0.5 rounded-full mt-1">{currentUser.role}</p>
+            
             <button
                 onClick={logout}
-                className="w-full mt-4 flex items-center justify-center gap-2 p-2 rounded-lg transition-colors duration-200 text-red-600 bg-red-50 hover:bg-red-100"
+                className="w-full mt-4 flex items-center justify-center gap-2 p-2 rounded-lg transition-colors duration-200 text-gray-500 hover:bg-gray-200"
             >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
                 <span className="font-semibold">{t('sidebarLogout')}</span>

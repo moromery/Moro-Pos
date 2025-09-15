@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { User } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { User, AutoBackup } from '../types';
 import { db } from '../db';
 import { useTranslation } from '../contexts/LanguageContext';
+import { exportDB } from 'dexie-export-import';
+import saveAs from 'file-saver';
+
 
 const ConfirmationModal: React.FC<{
   isOpen: boolean;
@@ -116,44 +119,37 @@ interface SettingsProps {
     updateShowTaxInReceipt: (show: boolean) => void;
     storeInfo: { name: string; address: string; phone: string; logoUrl: string };
     updateStoreInfo: (info: Partial<{ name: string; address: string; phone: string; logoUrl: string }>) => void;
-    importData: (data: any) => void;
     users: User[];
     currentUser: User | null;
     addUser: (user: Omit<User, 'id'>) => void;
     updateUser: (user: User) => void;
     deleteUser: (userId: string) => void;
+    syncServerUrl: string;
+    syncStatus: 'disconnected' | 'connecting' | 'connected';
+    updateSyncServerUrl: (url: string) => void;
+    autoBackups: AutoBackup[];
+    importData: (blob: Blob) => Promise<void>;
+    deleteAutoBackup: (id: string) => Promise<void>;
+    restoreAutoBackup: (id: string) => Promise<void>;
+    autoBackupTime: string;
+    updateAutoBackupTime: (time: string) => void;
+    backupDirectoryHandle: FileSystemDirectoryHandle | null;
+    setBackupDirectory: () => void;
+    clearBackupDirectory: () => void;
 }
-
-const handleExport = async () => {
-    const exportData: { [key: string]: any } = {};
-    
-    await db.transaction('r', db.tables, async () => {
-        for (const table of db.tables) {
-            exportData[table.name] = await table.toArray();
-        }
-    });
-
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `pos-backup-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-};
-
 
 const Settings: React.FC<SettingsProps> = (props) => {
     const { 
         taxRate, updateTaxRate, showTaxInReceipt, updateShowTaxInReceipt, 
-        storeInfo, updateStoreInfo, importData, 
+        storeInfo, updateStoreInfo, 
         users, currentUser, addUser, updateUser, deleteUser,
+        syncServerUrl, syncStatus, updateSyncServerUrl,
+        autoBackups, importData, deleteAutoBackup, restoreAutoBackup,
+        autoBackupTime, updateAutoBackupTime,
+        backupDirectoryHandle, setBackupDirectory, clearBackupDirectory
     } = props;
     
-    const { t, language, setLanguage } = useTranslation();
+    const { t, language, setLanguage, currency, setCurrency } = useTranslation();
     const [currentTaxRate, setCurrentTaxRate] = useState(taxRate);
     const [currentStoreInfo, setCurrentStoreInfo] = useState(storeInfo);
     const [isSaved, setIsSaved] = useState(false);
@@ -161,6 +157,14 @@ const Settings: React.FC<SettingsProps> = (props) => {
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [userToEdit, setUserToEdit] = useState<User | null>(null);
     const [userToDelete, setUserToDelete] = useState<User | null>(null);
+    const [currentCurrency, setCurrentCurrency] = useState(currency);
+    const [isCurrencySaved, setIsCurrencySaved] = useState(false);
+    const [currentSyncUrl, setCurrentSyncUrl] = useState(syncServerUrl);
+    const [confirmAction, setConfirmAction] = useState<{ type: 'import' | 'restore'; data: any; message: string; } | null>(null);
+    const importFileRef = useRef<HTMLInputElement>(null);
+    const [currentBackupTime, setCurrentBackupTime] = useState(autoBackupTime);
+    const [isBackupTimeSaved, setIsBackupTimeSaved] = useState(false);
+    const [fileApiSupport, setFileApiSupport] = useState<{ supported: boolean; reason: 'secure_context' | 'browser_support' | null }>({ supported: true, reason: null });
 
 
     useEffect(() => {
@@ -171,10 +175,44 @@ const Settings: React.FC<SettingsProps> = (props) => {
         setCurrentStoreInfo(storeInfo);
     }, [storeInfo]);
 
+    useEffect(() => {
+        setCurrentCurrency(currency);
+    }, [currency]);
+
+    useEffect(() => {
+        setCurrentSyncUrl(syncServerUrl);
+    }, [syncServerUrl]);
+
+    useEffect(() => {
+        setCurrentBackupTime(autoBackupTime);
+    }, [autoBackupTime]);
+
+    useEffect(() => {
+        if (!('showDirectoryPicker' in window)) {
+            setFileApiSupport({ supported: false, reason: 'browser_support' });
+        } else if (!window.isSecureContext) {
+            setFileApiSupport({ supported: false, reason: 'secure_context' });
+        } else {
+            setFileApiSupport({ supported: true, reason: null });
+        }
+    }, []);
+
     const handleTaxSave = () => {
         updateTaxRate(currentTaxRate);
         setIsSaved(true);
         setTimeout(() => setIsSaved(false), 2000); // Hide message after 2 seconds
+    };
+    
+    const handleCurrencySave = () => {
+        setCurrency(currentCurrency);
+        setIsCurrencySaved(true);
+        setTimeout(() => setIsCurrencySaved(false), 2000);
+    };
+
+    const handleBackupTimeSave = () => {
+        updateAutoBackupTime(currentBackupTime);
+        setIsBackupTimeSaved(true);
+        setTimeout(() => setIsBackupTimeSaved(false), 2000);
     };
 
     const handleStoreInfoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -199,33 +237,11 @@ const Settings: React.FC<SettingsProps> = (props) => {
         setTimeout(() => setIsStoreInfoSaved(false), 2000);
     };
 
-    const isStoreInfoChanged = JSON.stringify(storeInfo) !== JSON.stringify(currentStoreInfo);
-
-    const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        if (!window.confirm(t('importWarning'))) {
-            event.target.value = ''; // Clear the input
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const text = e.target?.result;
-                if (typeof text === 'string') {
-                    const data = JSON.parse(text);
-                    importData(data);
-                }
-            } catch (error) {
-                alert(t('importError'));
-                console.error("Import error:", error);
-            }
-            event.target.value = ''; // Clear the input
-        };
-        reader.readAsText(file);
+    const handleSyncUrlSave = () => {
+        updateSyncServerUrl(currentSyncUrl);
     };
+
+    const isStoreInfoChanged = JSON.stringify(storeInfo) !== JSON.stringify(currentStoreInfo);
 
     const handleOpenUserModal = (user: User | null = null) => {
         setUserToEdit(user);
@@ -247,12 +263,66 @@ const Settings: React.FC<SettingsProps> = (props) => {
         }
     };
     
-    const handleConfirmDelete = () => {
+    const handleConfirmDeleteUser = () => {
         if (userToDelete) {
             deleteUser(userToDelete.id);
         }
     };
 
+    const handleExport = async () => {
+        try {
+            const blob = await exportDB(db);
+            saveAs(blob, `pos-backup-${new Date().toISOString().split('T')[0]}.json`);
+        } catch (error) {
+            console.error('Export failed:', error);
+            alert(t('exportFailed', (error as Error).message));
+        }
+    };
+    
+    const handleImportClick = () => {
+        importFileRef.current?.click();
+    };
+    
+    const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            setConfirmAction({
+                type: 'import',
+                data: file,
+                message: t('importConfirmMessage'),
+            });
+        }
+        if(e.target) e.target.value = '';
+    };
+
+    const handleRestoreClick = (backupId: string) => {
+        setConfirmAction({
+            type: 'restore',
+            data: backupId,
+            message: t('restoreConfirmMessage', backupId),
+        });
+    };
+    
+    const handleConfirmAction = () => {
+        if (!confirmAction) return;
+        const { type, data } = confirmAction;
+        if (type === 'import') {
+            importData(data as Blob);
+        } else if (type === 'restore') {
+            restoreAutoBackup(data as string);
+        }
+        setConfirmAction(null);
+    };
+
+    const handleDownloadBackup = (backup: AutoBackup) => {
+        saveAs(backup.blob, `pos-autobackup-${backup.id}.json`);
+    };
+    
+    const statusInfo = {
+        connected: { text: t('statusConnected'), color: 'bg-green-100 text-green-800' },
+        connecting: { text: t('statusConnecting'), color: 'bg-yellow-100 text-yellow-800' },
+        disconnected: { text: t('statusDisconnected'), color: 'bg-red-100 text-red-800' },
+    };
 
     return (
         <div>
@@ -273,6 +343,60 @@ const Settings: React.FC<SettingsProps> = (props) => {
                         <option value="ar">{t('languageArabic')}</option>
                         <option value="en">{t('languageEnglish')}</option>
                     </select>
+                </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-md max-w-2xl mt-8">
+                <h2 className="text-2xl font-bold text-gray-700 mb-4 border-b pb-3">{t('currencySettings')}</h2>
+                <div className="flex items-center gap-4 mb-4">
+                    <label htmlFor="currency-select" className="text-lg font-medium text-gray-600">
+                        {t('appCurrency')}
+                    </label>
+                    <select
+                        id="currency-select"
+                        value={currentCurrency}
+                        onChange={(e) => setCurrentCurrency(e.target.value)}
+                        className="p-3 border rounded-lg bg-white w-48"
+                    >
+                        <option value="EGP">{t('currencyEGP')}</option>
+                        <option value="USD">{t('currencyUSD')}</option>
+                        <option value="EUR">{t('currencyEUR')}</option>
+                        <option value="SAR">{t('currencySAR')}</option>
+                    </select>
+                </div>
+                <div className="mt-6 flex items-center gap-4 border-t pt-4">
+                    <button
+                        onClick={handleCurrencySave}
+                        className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-md disabled:bg-gray-400"
+                        disabled={currentCurrency === currency}
+                    >
+                        {t('saveCurrency')}
+                    </button>
+                    {isCurrencySaved && <span className="text-green-600 font-semibold" role="status">{t('savedSuccessfully')}</span>}
+                </div>
+            </div>
+
+             <div className="bg-white p-6 rounded-xl shadow-md max-w-2xl mt-8">
+                <h2 className="text-2xl font-bold text-gray-700 mb-4 border-b pb-3">{t('networkSyncSettings')}</h2>
+                <p className="text-sm text-gray-600 mb-4">{t('networkSyncDescription')}</p>
+                <div>
+                    <label htmlFor="syncServerUrl" className="text-lg font-medium text-gray-600">{t('serverUrlLabel')}</label>
+                    <input id="syncServerUrl" name="syncServerUrl" value={currentSyncUrl} onChange={(e) => setCurrentSyncUrl(e.target.value)} className="mt-1 p-3 border rounded-lg w-full" placeholder={t('serverUrlPlaceholder')} />
+                </div>
+                <div className="mt-4 flex items-center gap-2">
+                    <label className="text-lg font-medium text-gray-600">{t('connectionStatusLabel')}:</label>
+                    <span className={`px-3 py-1 rounded-full font-semibold text-sm ${statusInfo[syncStatus].color}`}>
+                        {statusInfo[syncStatus].text}
+                    </span>
+                </div>
+                 <div className="mt-6 flex items-center gap-4 border-t pt-4">
+                    <button
+                        onClick={handleSyncUrlSave}
+                        className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-md disabled:bg-gray-400"
+                        disabled={currentSyncUrl === syncServerUrl}
+                    >
+                        {t('saveServerUrlButton')}
+                    </button>
                 </div>
             </div>
 
@@ -404,23 +528,93 @@ const Settings: React.FC<SettingsProps> = (props) => {
 
             <div className="bg-white p-6 rounded-xl shadow-md max-w-2xl mt-8">
                 <h2 className="text-2xl font-bold text-gray-700 mb-4 border-b pb-3">{t('dataManagement')}</h2>
-                <div className="space-y-4">
-                    <div>
-                        <h3 className="text-lg font-medium text-gray-600">{t('backupAndRestore')}</h3>
-                        <p className="text-sm text-gray-500 mt-1">
-                            {t('backupDescription')}
+                <p className="text-sm text-gray-600 mb-4">{t('dataManagementDescription')}</p>
+                <div className="flex gap-4">
+                    <button onClick={handleExport} className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700">{t('exportData')}</button>
+                    <button onClick={handleImportClick} className="bg-orange-500 text-white px-6 py-3 rounded-lg font-semibold hover:bg-orange-600">{t('importData')}</button>
+                    <input type="file" ref={importFileRef} onChange={onFileSelected} className="hidden" accept=".json"/>
+                </div>
+            </div>
+            
+            <div className="bg-white p-6 rounded-xl shadow-md max-w-2xl mt-8">
+                <h2 className="text-2xl font-bold text-gray-700 mb-4 border-b pb-3">{t('autoBackupTitle')}</h2>
+                 <div>
+                    <label htmlFor="backup-time" className="block text-lg font-medium text-gray-600">{t('autoBackupTimeSetting')}</label>
+                    <p className="text-sm text-gray-500 mb-2">{t('autoBackupTimeDescription')}</p>
+                    <input
+                        id="backup-time"
+                        type="time"
+                        value={currentBackupTime}
+                        onChange={(e) => setCurrentBackupTime(e.target.value)}
+                        className="p-3 border rounded-lg"
+                    />
+                    <button 
+                        onClick={handleBackupTimeSave} 
+                        disabled={currentBackupTime === autoBackupTime}
+                        className="bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 mx-4"
+                    >
+                        {t('saveBackupTime')}
+                    </button>
+                    {isBackupTimeSaved && <span className="text-green-600 font-semibold">{t('savedSuccessfully')}</span>}
+                </div>
+                <div className="border-t mt-4 pt-4">
+                    <p className="text-sm text-gray-600 mb-4">{t('autoBackupDescription')}</p>
+                    {autoBackups.length > 0 ? (
+                        <ul className="space-y-3 max-h-72 overflow-y-auto border p-2 rounded-lg">
+                            {autoBackups.map(backup => (
+                                <li key={backup.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                                    <div>
+                                        <p className="font-semibold">{t('backupDate', backup.id)}</p>
+                                        <p className="text-xs text-gray-500">{new Date(backup.createdAt).toLocaleString(language === 'ar' ? 'ar-EG' : 'en-US')}</p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleRestoreClick(backup.id)} className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">{t('restore')}</button>
+                                        <button onClick={() => handleDownloadBackup(backup)} className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600">{t('download')}</button>
+                                        <button onClick={() => deleteAutoBackup(backup.id)} className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600">{t('delete')}</button>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-center text-gray-500 p-4">{t('noAutoBackups')}</p>
+                    )}
+                </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-md max-w-2xl mt-8">
+                <h2 className="text-2xl font-bold text-gray-700 mb-4 border-b pb-3">{t('settingsAutoFileBackup')}</h2>
+                <p className="text-sm text-gray-600 mb-4">{t('settingsAutoFileBackupDesc')}</p>
+                {fileApiSupport.supported ? (
+                    <>
+                        {backupDirectoryHandle ? (
+                            <div className="flex items-center gap-4 p-3 bg-green-100 rounded-lg">
+                                <p className="text-green-800 font-medium">
+                                    {t('settingsSelectedFolder')}: <span className="font-bold">{backupDirectoryHandle.name}</span>
+                                </p>
+                                <button onClick={clearBackupDirectory} className="ml-auto bg-red-500 text-white px-3 py-1 rounded-lg text-sm font-semibold hover:bg-red-600">
+                                    {t('settingsClearSelection')}
+                                </button>
+                            </div>
+                        ) : (
+                            <button onClick={setBackupDirectory} className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700">
+                                {t('settingsChooseFolder')}
+                            </button>
+                        )}
+                    </>
+                ) : (
+                    <div className="p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 rounded-lg" role="alert">
+                        <p className="font-bold">
+                            {fileApiSupport.reason === 'secure_context'
+                                ? t('settingsFileSystemInsecure')
+                                : t('settingsFileSystemNotSupported')}
+                        </p>
+                        <p className="text-sm mt-1">
+                            {fileApiSupport.reason === 'secure_context'
+                                ? t('settingsFileSystemInsecureDesc')
+                                : t('settingsFileSystemNotSupportedDesc')}
                         </p>
                     </div>
-                    <div className="flex gap-4 pt-2">
-                        <button onClick={handleExport} className="bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors">
-                            {t('exportBackup')}
-                        </button>
-                        <label className="bg-red-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors cursor-pointer">
-                            {t('importBackup')}
-                            <input type="file" accept=".json" className="hidden" onChange={handleImport} />
-                        </label>
-                    </div>
-                </div>
+                )}
             </div>
 
             <UserModal 
@@ -432,9 +626,16 @@ const Settings: React.FC<SettingsProps> = (props) => {
             <ConfirmationModal 
                 isOpen={!!userToDelete}
                 onClose={() => setUserToDelete(null)}
-                onConfirm={handleConfirmDelete}
+                onConfirm={handleConfirmDeleteUser}
                 title={t('confirmDelete')}
                 message={t('deleteUserConfirmation', userToDelete?.username || '')}
+            />
+             <ConfirmationModal
+                isOpen={!!confirmAction}
+                onClose={() => setConfirmAction(null)}
+                onConfirm={handleConfirmAction}
+                title={t('confirmActionTitle')}
+                message={confirmAction?.message || ''}
             />
         </div>
     );

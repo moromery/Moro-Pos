@@ -1,5 +1,5 @@
 {
-  "name": "moro-pos",
+  "name": "moro-pos-متعدد-الاجهزة",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -18,7 +18,8 @@
     "xlsx": "^0.18.5",
     "dexie": "^4.0.7",
     "file-saver": "^2.0.5",
-    "docx": "^9.5.1"
+    "docx": "^9.5.1",
+    "dexie-export-import": "^4.1.4"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -25,7 +25,7 @@ const BarcodeLabelModal: React.FC<{
     product: Product;
     onClose: () => void;
 }> = ({ product, onClose }) => {
-    const { t } = useTranslation();
+    const { t, language, currency } = useTranslation();
     const barcodeRef = useRef<SVGSVGElement>(null);
 
     useEffect(() => {
@@ -70,7 +70,7 @@ const BarcodeLabelModal: React.FC<{
                 <h3 className="text-xl font-bold mb-4 text-center">{t('barcodeLabelTitle')}</h3>
                 <div id="barcode-label-content" className="label-container text-center font-sans border p-4 rounded-lg">
                     <p className="font-bold text-lg">{product.name}</p>
-                    <p className="text-md mb-2">{new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(mainUnit.price)}</p>
+                    <p className="text-md mb-2">{new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(mainUnit.price)}</p>
                     <svg ref={barcodeRef}></svg>
                 </div>
                 <div className="flex justify-around mt-6 no-print">
@@ -415,7 +415,7 @@ const ConfirmationModal: React.FC<{
 
 
 const Inventory: React.FC<InventoryProps> = ({ products, categories, addProduct, updateProduct, deleteProduct }) => {
-  const { t } = useTranslation();
+  const { t, language, currency } = useTranslation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -499,7 +499,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, categories, addProduct,
   };
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(amount);
+    return new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
   };
 
   const getCategoryName = (categoryId: string) => {
@@ -518,7 +518,7 @@ const Inventory: React.FC<InventoryProps> = ({ products, categories, addProduct,
     const today = new Date();
     today.setHours(0,0,0,0);
 
-    const expiringBatch = product.batches.find(b => 
+    const expiringBatch = (product.batches || []).find(b => 
         b.expiryDate && new Date(b.expiryDate) <= thresholdDate && new Date(b.expiryDate) >= today
     );
 

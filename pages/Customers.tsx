@@ -135,14 +135,14 @@ const PaymentModal: React.FC<{
 };
 
 const Customers: React.FC<CustomerProps> = ({ customers, addCustomer, updateCustomer, deleteCustomer, addCustomerPayment, onViewProfile }) => {
-    const { t } = useTranslation();
+    const { t, language, currency } = useTranslation();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
     const [customerToDelete, setCustomerToDelete] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
-    const formatCurrency = (amount: number) => new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(amount);
+    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
 
     const handleSaveCustomer = (customerData: Customer | Omit<Customer, 'id' | 'balance'>) => {
         if ('id' in customerData) {

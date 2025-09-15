@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useMemo } from 'react';
 import StatCard from '../components/StatCard';
 import { Sale, Product, Notification } from '../types';
@@ -16,7 +17,7 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ sales, products, notifications, dismissNotification }) => {
-  const { t, language } = useTranslation();
+  const { t, language, currency } = useTranslation();
   
   const totalSales = sales.reduce((sum, sale) => sum + sale.total, 0);
   const totalTransactions = sales.length;
@@ -24,7 +25,7 @@ const Dashboard: React.FC<DashboardProps> = ({ sales, products, notifications, d
   const lowStockProducts = products.filter(p => p.stock < 10).length;
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: 'EGP' }).format(amount);
+    return new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
   };
 
   const weeklySalesData = useMemo(() => {

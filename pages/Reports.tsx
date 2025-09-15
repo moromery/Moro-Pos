@@ -12,14 +12,14 @@ interface ReportsProps {
 }
 
 const Reports: React.FC<ReportsProps> = ({ sales, products, customers, suppliers }) => {
-    const { t } = useTranslation();
+    const { t, language, currency } = useTranslation();
     const [activeTab, setActiveTab] = useState<'profit' | 'items' | 'expiry' | 'customersDebt' | 'suppliersDebt'>('profit');
     const [dateRange, setDateRange] = useState({
         start: new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0],
         end: new Date().toISOString().split('T')[0],
     });
 
-    const formatCurrency = (amount: number) => new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(amount);
+    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
 
     const filteredSales = useMemo(() => {
         const startDate = new Date(dateRange.start);
@@ -68,7 +68,7 @@ const Reports: React.FC<ReportsProps> = ({ sales, products, customers, suppliers
 
         const expiringBatches = products.flatMap(product => {
             const baseUnit = product.units.find(u => u.factor === 1);
-            return product.batches
+            return (product.batches || [])
                 .filter(batch => batch.expiryDate && new Date(batch.expiryDate) >= today)
                 .map(batch => ({
                     productId: product.id,
@@ -231,16 +231,33 @@ const Reports: React.FC<ReportsProps> = ({ sales, products, customers, suppliers
                     <div className="bg-white p-6 rounded-xl shadow-md">
                         <h2 className="text-xl font-bold text-gray-700 mb-4">{t('reportsExpiryTitle')}</h2>
                         <p className="text-sm text-gray-500 mb-4">{t('reportsExpiryDescription')}</p>
-                        <div className="overflow-x-auto max-h-[600px]">
-                            <table className="w-full text-right"><thead className="bg-gray-50 sticky top-0"><tr><th className="p-3 text-sm font-semibold">{t('inventoryTableProduct')}</th><th className="p-3 text-sm font-semibold">{t('reportsExpiryQuantity')}</th><th className="p-3 text-sm font-semibold">{t('productModalExpiryDate')}</th><th className="p-3 text-sm font-semibold">{t('reportsExpiryDaysLeft')}</th></tr></thead>
+                        <div className="overflow-x-auto max-h-[60vh]">
+                            <table className="w-full text-right">
+                                <thead className="bg-gray-50 sticky top-0">
+                                    <tr>
+                                        <th className="p-3">{t('inventoryTableProduct')}</th>
+                                        <th className="p-3">{t('reportsExpiryQuantity')}</th>
+                                        <th className="p-3">{t('productModalExpiryDate')}</th>
+                                        <th className="p-3">{t('reportsExpiryDaysLeft')}</th>
+                                    </tr>
+                                </thead>
                                 <tbody>
-                                    {expiryReportData.map(item => {
-                                        const daysRemaining = calculateDaysRemaining(item.expiryDate);
-                                        let rowClass = 'border-b';
-                                        if (daysRemaining <= 7) { rowClass += ' bg-red-50 text-red-900'; } else if (daysRemaining <= 30) { rowClass += ' bg-yellow-50 text-yellow-900'; }
-                                        return (<tr key={item.batchId} className={rowClass}><td className="p-3 font-semibold">{item.productName}</td><td className="p-3">{item.quantity} {item.unitName}</td><td className="p-3">{new Date(item.expiryDate).toLocaleDateString('ar-EG')}</td><td className="p-3 font-bold">{daysRemaining}</td></tr>);
-                                    })}
-                                    {expiryReportData.length === 0 && (<tr><td colSpan={4} className="text-center p-8 text-gray-500">{t('reportsNoExpiry')}</td></tr>)}
+                                    {expiryReportData.length > 0 ? expiryReportData.map(batch => {
+                                        const daysLeft = calculateDaysRemaining(batch.expiryDate);
+                                        const colorClass = daysLeft <= 7 ? 'text-red-600 font-bold' : daysLeft <= 30 ? 'text-yellow-600' : '';
+                                        return (
+                                            <tr key={batch.batchId} className="border-b">
+                                                <td className="p-3">{batch.productName}</td>
+                                                <td className="p-3">{batch.quantity} {batch.unitName}</td>
+                                                <td className="p-3">{new Date(batch.expiryDate).toLocaleDateString(language === 'ar' ? 'ar-EG' : 'en-US')}</td>
+                                                <td className={`p-3 ${colorClass}`}>{daysLeft}</td>
+                                            </tr>
+                                        );
+                                    }) : (
+                                        <tr>
+                                            <td colSpan={4} className="text-center p-8 text-gray-500">{t('reportsNoExpiry')}</td>
+                                        </tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>
@@ -250,10 +267,25 @@ const Reports: React.FC<ReportsProps> = ({ sales, products, customers, suppliers
                 {activeTab === 'customersDebt' && (
                     <div className="bg-white p-6 rounded-xl shadow-md">
                         <h2 className="text-xl font-bold text-gray-700 mb-4">{t('reportsCustomersDebtTitle')}</h2>
-                        <div className="overflow-x-auto max-h-[600px]">
-                            <table className="w-full text-right"><thead className="bg-gray-50 sticky top-0"><tr><th className="p-3 text-sm font-semibold">{t('customer')}</th><th className="p-3 text-sm font-semibold">{t('customersTablePhone')}</th><th className="p-3 text-sm font-semibold">{t('reportsDebtBalance')}</th></tr></thead>
-                                <tbody className="divide-y divide-gray-100">{customersDebtData.data.map(customer => (<tr key={customer.id}><td className="p-3 font-semibold">{customer.name}</td><td className="p-3 text-gray-600">{customer.phone}</td><td className="p-3 font-bold text-red-600">{formatCurrency(customer.balance)}</td></tr>))}</tbody>
-                                <tfoot className="bg-gray-100"><tr><td colSpan={2} className="p-3 font-bold text-lg text-right">{t('total')}</td><td className="p-3 font-bold text-lg text-red-600">{formatCurrency(customersDebtData.total)}</td></tr></tfoot>
+                        <div className="bg-blue-100 text-blue-800 p-4 rounded-lg mb-4 text-center">
+                            <p className="font-bold text-2xl">{formatCurrency(customersDebtData.total)}</p>
+                        </div>
+                        <div className="overflow-x-auto max-h-[60vh]">
+                            <table className="w-full text-right">
+                                <thead className="bg-gray-50 sticky top-0">
+                                    <tr>
+                                        <th className="p-3">{t('customersTableName')}</th>
+                                        <th className="p-3">{t('reportsDebtBalance')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {customersDebtData.data.map(c => (
+                                        <tr key={c.id} className="border-b">
+                                            <td className="p-3">{c.name}</td>
+                                            <td className="p-3 font-bold text-red-600">{formatCurrency(c.balance)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
                             </table>
                         </div>
                     </div>
@@ -262,14 +294,30 @@ const Reports: React.FC<ReportsProps> = ({ sales, products, customers, suppliers
                 {activeTab === 'suppliersDebt' && (
                     <div className="bg-white p-6 rounded-xl shadow-md">
                         <h2 className="text-xl font-bold text-gray-700 mb-4">{t('reportsSuppliersDebtTitle')}</h2>
-                        <div className="overflow-x-auto max-h-[600px]">
-                            <table className="w-full text-right"><thead className="bg-gray-50 sticky top-0"><tr><th className="p-3 text-sm font-semibold">{t('purchasesTableSupplier')}</th><th className="p-3 text-sm font-semibold">{t('customersTablePhone')}</th><th className="p-3 text-sm font-semibold">{t('reportsDebtBalance')}</th></tr></thead>
-                                <tbody className="divide-y divide-gray-100">{suppliersDebtData.data.map(supplier => (<tr key={supplier.id}><td className="p-3 font-semibold">{supplier.company}</td><td className="p-3 text-gray-600">{supplier.phone}</td><td className="p-3 font-bold text-red-600">{formatCurrency(supplier.balance)}</td></tr>))}</tbody>
-                                 <tfoot className="bg-gray-100"><tr><td colSpan={2} className="p-3 font-bold text-lg text-right">{t('total')}</td><td className="p-3 font-bold text-lg text-red-600">{formatCurrency(suppliersDebtData.total)}</td></tr></tfoot>
+                         <div className="bg-red-100 text-red-800 p-4 rounded-lg mb-4 text-center">
+                            <p className="font-bold text-2xl">{formatCurrency(suppliersDebtData.total)}</p>
+                        </div>
+                        <div className="overflow-x-auto max-h-[60vh]">
+                            <table className="w-full text-right">
+                                <thead className="bg-gray-50 sticky top-0">
+                                    <tr>
+                                        <th className="p-3">{t('suppliersTableCompany')}</th>
+                                        <th className="p-3">{t('reportsDebtBalance')}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {suppliersDebtData.data.map(s => (
+                                        <tr key={s.id} className="border-b">
+                                            <td className="p-3">{s.company}</td>
+                                            <td className="p-3 font-bold text-red-600">{formatCurrency(s.balance)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
                             </table>
                         </div>
                     </div>
                 )}
+
             </div>
         </div>
     );

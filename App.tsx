@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
@@ -179,8 +178,6 @@ const App: React.FC = () => {
           setSelectedId(null);
           setActivePage(page);
         }}
-        notifications={posState.notifications}
-        dismissNotification={posState.dismissNotification}
         currentUser={currentUser}
         logout={logout}
       />

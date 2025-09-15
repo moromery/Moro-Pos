@@ -1,4 +1,3 @@
-
 // FIX: Broke a circular dependency by changing Notification.messageKey to a string.
 // This resolves phantom TypeScript errors related to the TranslationKey type.
 // import { TranslationKey } from './contexts/LanguageContext';
@@ -199,6 +198,16 @@ export interface SupplierReturn {
     purchaseId?: string; // Optional: to link to an original purchase
 }
 
+// FIX: Added Attendance type definition to resolve import error.
+export interface Attendance {
+  id: string;
+  userId: string;
+  username: string;
+  checkInTime: string; // ISO string
+  checkOutTime: string | null; // null if still checked in
+  status: 'checked-in' | 'checked-out';
+}
+
 export interface WorkSession {
     id: string;
     startTime: string; // ISO string
@@ -218,6 +227,11 @@ export interface WorkSession {
     difference?: number; // positive for overage, negative for shortage
 }
 
+export interface AutoBackup {
+    id: string; // YYYY-MM-DD
+    blob: Blob;
+    createdAt: Date;
+}
 
 export type Page = 'dashboard' | 'pos' | 'inventory' | 'categories' | 'sales' | 'purchases' | 'supplierReturns' | 'reports' | 'settings' | 'customers' | 'suppliers' | 'adjustments' | 'customerProfile' | 'supplierProfile' | 'sessions';
 

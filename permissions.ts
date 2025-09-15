@@ -1,4 +1,3 @@
-
 import { Page, Role } from './types';
 
 export const PERMISSIONS: Record<Role, Page[]> = {

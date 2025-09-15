@@ -1,7 +1,6 @@
-
 import Dexie, { Table } from 'dexie';
 // FIX: Import Purchase and SupplierReturn types.
-import { Product, Category, Sale, Customer, Supplier, CustomerPayment, SupplierPayment, Adjustment, ParkedSale, User, WorkSession, Expense, Purchase, SupplierReturn } from './types';
+import { Product, Category, Sale, Customer, Supplier, CustomerPayment, SupplierPayment, Adjustment, ParkedSale, User, WorkSession, Expense, Purchase, SupplierReturn, AutoBackup } from './types';
 
 export interface Setting {
     key: string;
@@ -30,6 +29,7 @@ export const db = new Dexie('PosDatabase') as Dexie & {
     settings: Table<Setting, string>;
     workSessions: Table<WorkSession, string>;
     expenses: Table<Expense, string>;
+    autoBackups: Table<AutoBackup, string>;
 };
 
 // NOTE: Adding a new table to an existing version might require users to clear their browser database
@@ -52,4 +52,24 @@ db.version(1).stores({
     settings: 'key',
     workSessions: 'id, status, startTime',
     expenses: 'id, sessionId, date',
+});
+
+// Version 2: Added auto_backups table
+db.version(2).stores({
+    products: 'id, name, categoryId, sku',
+    categories: 'id, parentId',
+    sales: 'id, date, customerId',
+    customers: 'id, name, phone',
+    suppliers: 'id, name, company',
+    customerPayments: 'id, customerId, date',
+    supplierPayments: 'id, supplierId, date',
+    purchases: 'id, supplierId, date',
+    supplierReturns: 'id, supplierId, date',
+    adjustments: 'id, date',
+    parkedSales: 'id, date',
+    users: 'id, username',
+    settings: 'key',
+    workSessions: 'id, status, startTime',
+    expenses: 'id, sessionId, date',
+    autoBackups: 'id', // id will be 'YYYY-MM-DD'
 });

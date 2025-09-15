@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Sale, Customer } from '../types';
 import { useTranslation } from '../contexts/LanguageContext';
 
@@ -12,11 +12,11 @@ interface ReceiptProps {
 }
 
 const Receipt: React.FC<ReceiptProps> = ({ sale, customer, onClose, showTax, storeInfo, isExporting = false }) => {
-    const { t, language } = useTranslation();
-    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: 'EGP' }).format(amount);
+    const { t, language, currency } = useTranslation();
+    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
     const formatDate = (date: string) => new Date(date).toLocaleString(language === 'ar' ? 'ar-EG' : 'en-US');
 
-    const handlePrint = () => {
+    const handlePrint = useCallback(() => {
         const receiptContent = document.getElementById('receipt-content');
         if (!receiptContent) return;
 
@@ -73,16 +73,13 @@ const Receipt: React.FC<ReceiptProps> = ({ sale, customer, onClose, showTax, sto
         printWindow.document.write('</body></html>');
         printWindow.document.close();
 
-        // Use onafterprint to close the window. This is more reliable because it
-        // waits for the user to finish interacting with the print dialog.
         printWindow.onafterprint = () => printWindow.close();
         
-        // Give the browser a moment to render the content before triggering print.
         setTimeout(() => {
             printWindow.focus();
             printWindow.print();
         }, 250);
-    };
+    }, [language, t]);
 
     const receiptInnerContent = (
         <>

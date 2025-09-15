@@ -13,7 +13,7 @@ const WeightEntryModal: React.FC<{
     onConfirm: (product: Product, weight: number) => void;
     onClose: () => void;
 }> = ({ product, onConfirm, onClose }) => {
-    const { t, language } = useTranslation();
+    const { t, language, currency } = useTranslation();
     const [weight, setWeight] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -23,7 +23,7 @@ const WeightEntryModal: React.FC<{
 
     const baseUnit = product.units.find(u => u.factor === 1) || product.units[0];
     const price = (parseFloat(weight) || 0) * baseUnit.price;
-    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: 'EGP' }).format(amount);
+    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
 
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -100,8 +100,8 @@ const UnitSelectionModal: React.FC<{
     onSelect: (product: Product, unit: Unit) => void;
     onClose: () => void;
 }> = ({ product, onSelect, onClose }) => {
-    const { t, language } = useTranslation();
-    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: 'EGP' }).format(amount);
+    const { t, language, currency } = useTranslation();
+    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
     
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={onClose}>
@@ -130,8 +130,8 @@ const ParkedSalesModal: React.FC<{
     onDelete: (saleId: string) => void;
     onClose: () => void;
 }> = ({ parkedSales, onRetrieve, onDelete, onClose }) => {
-    const { t, language } = useTranslation();
-    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: 'EGP' }).format(amount);
+    const { t, language, currency } = useTranslation();
+    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
     const formatDate = (date: string) => new Date(date).toLocaleString(language === 'ar' ? 'ar-EG' : 'en-US');
 
     return (
@@ -166,7 +166,7 @@ const ParkedSalesModal: React.FC<{
 
 const POS: React.FC<PosProps> = (props) => {
   const { products, cart, customers, categories, taxRate, addToCart, updateCartQuantity, removeFromCart, clearCart, completeSale, showTaxInReceipt, storeInfo, parkedSales, parkSale, retrieveSale, deleteParkedSale, workSessions, currentUser } = props;
-  const { t, language } = useTranslation();
+  const { t, language, currency } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
   const [barcode, setBarcode] = useState('');
   const [categoryPath, setCategoryPath] = useState<Category[]>([]);
@@ -223,19 +223,23 @@ const POS: React.FC<PosProps> = (props) => {
   const total = subtotalAfterDiscount + tax;
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: 'EGP' }).format(amount);
+    return new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
   };
   
   const isExistingCustomer = useMemo(() => customers.some(c => c.name.trim().toLowerCase() === customerName.trim().toLowerCase()), [customers, customerName]);
 
   const proceedWithSale = async (payments: SalePayment[], createNewCustomer: boolean) => {
-    const result = await completeSale(payments, customerName, discount, createNewCustomer);
-    if (result) {
+    try {
+        const result = await completeSale(payments, customerName, discount, createNewCustomer);
         setLastSaleInfo(result);
-        setIsPaymentModalOpen(false);
-        setCustomerConfirmation(null);
         setDiscount(0);
         setCustomerName(t('cashCustomer'));
+    } catch (error: any) {
+        console.error("Failed to complete sale:", error);
+        alert(t('saleFailedWithReason', error.message || t('saleCompletionError')));
+    } finally {
+        setIsPaymentModalOpen(false);
+        setCustomerConfirmation(null);
     }
   };
 
@@ -404,7 +408,7 @@ const POS: React.FC<PosProps> = (props) => {
                     </div>
                 )}
 
-                <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {displayItems.map(item => {
                     if ('isCategory' in item && item.isCategory) {
                       const { isCategory, ...cat } = item;
@@ -422,15 +426,35 @@ const POS: React.FC<PosProps> = (props) => {
                       );
                     } else {
                       const product = item as Product;
+                      const isOutOfStock = product.stock <= 0;
+                      const baseUnit = product.units.find(u => u.factor === 1) || product.units[0];
+                      const stockDisplay = product.sellingMethod === 'weight' ? product.stock.toFixed(2) : Math.floor(product.stock);
+
                       return (
                         <div
                           key={product.id}
-                          onClick={() => handleProductClick(product)}
-                          className="border rounded-lg p-4 flex flex-col items-center text-center cursor-pointer hover:shadow-lg hover:border-blue-500 transition-all duration-200"
+                          onClick={() => !isOutOfStock && handleProductClick(product)}
+                          className={`border rounded-lg p-3 flex flex-col items-center text-center transition-all duration-200 relative
+                            ${isOutOfStock 
+                              ? 'bg-gray-100 cursor-not-allowed' 
+                              : 'cursor-pointer hover:shadow-lg hover:border-blue-500'}`
+                          }
                         >
-                          <img src={product.imageUrl} alt={product.name} className="w-24 h-24 object-cover rounded-md mb-2" />
-                          <h3 className="font-bold text-gray-700 flex-grow">{product.name}</h3>
-                          <p className="text-blue-600 font-semibold mt-1">{formatCurrency(product.units[0].price)}</p>
+                          <div className={`absolute top-1 right-1 px-2 py-0.5 text-xs font-bold text-white rounded-full shadow-md
+                            ${product.stock <= 0 ? 'bg-red-600' : product.stock <= 10 ? 'bg-amber-500' : 'bg-green-600'}`
+                          }>
+                            {`${stockDisplay} ${baseUnit.name}`}
+                          </div>
+
+                          <img 
+                            src={product.imageUrl} 
+                            alt={product.name} 
+                            className={`w-24 h-24 object-cover rounded-md mb-2 ${isOutOfStock ? 'filter grayscale' : ''}`} 
+                          />
+                          <h3 className={`font-bold text-gray-700 flex-grow text-sm leading-tight ${isOutOfStock ? 'text-gray-400' : ''}`}>{product.name}</h3>
+                          <p className={`font-semibold mt-1 text-sm ${isOutOfStock ? 'text-gray-400' : 'text-blue-600'}`}>
+                            {formatCurrency(product.units[0].price)}
+                          </p>
                         </div>
                       );
                     }

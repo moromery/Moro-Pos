@@ -9,7 +9,7 @@ interface PaymentModalProps {
 }
 
 const PaymentModal: React.FC<PaymentModalProps> = ({ total, onClose, onCompleteSale }) => {
-    const { t, language } = useTranslation();
+    const { t, language, currency } = useTranslation();
     const [amountReceivedStr, setAmountReceivedStr] = useState<string>('');
 
     const amountReceived = useMemo(() => parseFloat(amountReceivedStr) || 0, [amountReceivedStr]);
@@ -22,7 +22,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ total, onClose, onCompleteS
         setTimeout(() => inputRef.current?.focus(), 100);
     }, []);
 
-    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: 'EGP' }).format(amount);
+    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
 
     const handleFinalizeSale = () => {
         if (canComplete) {

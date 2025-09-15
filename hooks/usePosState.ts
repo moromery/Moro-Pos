@@ -1,8 +1,12 @@
-import { useState, useCallback, useEffect } from 'react';
-// FIX: Import Purchase and PurchaseItem types.
-import { Product, CartItem, Sale, Customer, Supplier, CustomerPayment, Category, SupplierPayment, Unit, Notification, SalePayment, ParkedSale, Adjustment, User, WorkSession, Expense, Purchase, PurchaseItem, Batch, SupplierReturn, SupplierReturnItem, PaymentMethod } from '../types';
+
+
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { Product, CartItem, Sale, Customer, Supplier, CustomerPayment, Category, SupplierPayment, Unit, Notification, SalePayment, ParkedSale, Adjustment, User, WorkSession, Expense, Purchase, PurchaseItem, Batch, SupplierReturn, SupplierReturnItem, PaymentMethod, AutoBackup } from '../types';
 import { db } from '../db';
+import * as apiClient from '../services/apiClient';
+import * as syncService from '../services/syncService';
 import { useTranslation } from '../contexts/LanguageContext';
+import { importDB, exportDB } from 'dexie-export-import';
 
 const initialCategories: Category[] = [
     { id: 'cat_hs', name: 'مشروبات ساخنة', parentId: null, imageUrl: 'https://picsum.photos/seed/hotdrinks/200' },
@@ -33,313 +37,268 @@ const initialCustomers: Customer[] = [
 ];
 
 const initialSuppliers: Supplier[] = [
-    { id: 's1', name: 'مورد القهوة', phone: '01112345678', email: 'coffee@supplier.com', company: 'شركة حبوب البن الذهبية', balance: 0 },
-    { id: 's2', name: 'مورد المخبوزات', phone: '01223456789', email: 'bakery@supplier.com', company: 'مخبز الفجر', balance: 150.75 },
+    { id: 's1', name: 'مورد القهوة', phone: '01112345678', email: 'coffee@supplier.com', company: 'شركة بن العالمية', balance: 0 },
 ];
 
 const initialUsers: User[] = [
-    { id: 'user_admin', username: 'admin', password: 'password', role: 'admin' },
-    { id: 'user_cashier', username: 'cashier', password: 'password', role: 'cashier' },
+  { id: 'user1', username: 'admin', password: '123', role: 'admin' },
+  { id: 'user2', username: 'cashier', password: '123', role: 'cashier' },
 ];
 
-const initialStoreInfo = {
-    name: 'اسم المتجر',
-    address: '123 شارع التجارة, المدينة',
-    phone: '0123456789',
-    logoUrl: '',
-};
+type SyncStatus = 'disconnected' | 'connecting' | 'connected';
 
-const getDateDaysAgo = (days: number): string => {
-    const date = new Date();
-    date.setDate(date.getDate() - days);
-    return date.toISOString();
-};
-
-const initialPurchases: Purchase[] = [
-    {
-        id: 'pur_1',
-        date: getDateDaysAgo(25),
-        supplierId: 's1',
-        supplierName: 'شركة حبوب البن الذهبية',
-        items: [{
-            productId: 'p1',
-            productName: 'قهوة اسبريسو',
-            quantity: 100,
-            costPrice: 6.80,
-            unitName: 'كوب',
-            unitFactor: 1,
-            subtotal: 680,
-        }],
-        total: 680,
-        amountPaid: 680,
-        paymentMethod: 'cash',
-        notes: 'دفعة أولى من حبوب القهوة الإثيوبية',
-    },
-    {
-        id: 'pur_2',
-        date: getDateDaysAgo(20),
-        supplierId: 's2',
-        supplierName: 'مخبز الفجر',
-        items: [{
-            productId: 'p3',
-            productName: 'كرواسون بالزبدة',
-            quantity: 20,
-            costPrice: 24.50,
-            unitName: 'علبة (6 قطع)',
-            unitFactor: 6,
-            subtotal: 490,
-            expiryDate: generateExpiryDate(25)
-        }],
-        total: 490,
-        amountPaid: 400,
-        paymentMethod: 'deferred',
-        notes: '',
-    },
-    {
-        id: 'pur_3',
-        date: getDateDaysAgo(15),
-        supplierId: 's1',
-        supplierName: 'شركة حبوب البن الذهبية',
-        items: [{
-            productId: 'p2',
-            productName: 'كابتشينو',
-            quantity: 50,
-            costPrice: 8.90,
-            unitName: 'كوب',
-            unitFactor: 1,
-            subtotal: 445,
-        }],
-        total: 445,
-        amountPaid: 0,
-        paymentMethod: 'deferred',
-        notes: 'سيتم السداد الأسبوع القادم',
-    },
-    {
-        id: 'pur_4',
-        date: getDateDaysAgo(10),
-        supplierId: 's2',
-        supplierName: 'مخبز الفجر',
-        items: [
-            {
-                productId: 'p3',
-                productName: 'كرواسون بالزبدة',
-                quantity: 150,
-                costPrice: 4.50,
-                unitName: 'قطعة',
-                unitFactor: 1,
-                subtotal: 675,
-                expiryDate: generateExpiryDate(15)
-            },
-            {
-                productId: 'p5',
-                productName: 'ساندويتش ديك رومي',
-                quantity: 30,
-                costPrice: 13.50,
-                unitName: 'ساندويتش',
-                unitFactor: 1,
-                subtotal: 405,
-                expiryDate: generateExpiryDate(50)
+const useDataSync = (setters: { [key: string]: (data: any) => void }, onSyncStatusChange: (status: SyncStatus) => void) => {
+    useEffect(() => {
+        const handleSyncMessage = async (event: MessageEvent) => {
+            try {
+                const message = JSON.parse(event.data);
+                if (message.type === 'DATA_CHANGED' && message.payload.table) {
+                    const table = message.payload.table;
+                    console.log(`Sync received: ${table} updated. Refetching...`);
+                    const setterKey = `set${table.charAt(0).toUpperCase() + table.slice(1)}`;
+                    if (apiClient[`get${table.charAt(0).toUpperCase() + table.slice(1)}` as keyof typeof apiClient] && setters[setterKey]) {
+                        const data = await (apiClient[`get${table.charAt(0).toUpperCase() + table.slice(1)}` as keyof typeof apiClient] as any)();
+                        setters[setterKey](data);
+                    }
+                }
+            } catch (error) {
+                console.error("Error handling sync message:", error);
             }
-        ],
-        total: 1080,
-        amountPaid: 1080,
-        paymentMethod: 'cash',
-        notes: 'توريد يومي',
-    },
-    {
-        id: 'pur_5',
-        date: getDateDaysAgo(5),
-        supplierId: 's1',
-        supplierName: 'شركة حبوب البن الذهبية',
-        items: [{
-            productId: 'p4',
-            productName: 'عصير برتقال طازج',
-            quantity: 80,
-            costPrice: 5.75,
-            unitName: 'كوب',
-            unitFactor: 1,
-            subtotal: 460,
-            expiryDate: generateExpiryDate(25)
-        }],
-        total: 460,
-        amountPaid: 200,
-        paymentMethod: 'deferred',
-        notes: 'دفعة تحت الحساب',
-    }
-];
+        };
 
-// Pre-process initial data based on purchases for a more realistic demo state
-const processInitialData = () => {
-    const products = JSON.parse(JSON.stringify(initialProducts)) as Product[];
-    const suppliers = JSON.parse(JSON.stringify(initialSuppliers)) as Supplier[];
+        const removeListener = syncService.listen(handleSyncMessage);
 
-    const productStockUpdates = new Map<string, Batch[]>();
-    const supplierBalanceUpdates = new Map<string, number>();
+        const initializeSync = async () => {
+            const syncUrlSetting = await db.settings.get('syncServerUrl');
+            if (syncUrlSetting?.value) {
+                syncService.initialize(syncUrlSetting.value, onSyncStatusChange);
+            }
+        };
 
-    for (const purchase of initialPurchases) {
-        // Update product stock with batches
-        for (const item of purchase.items) {
-            const currentBatches = productStockUpdates.get(item.productId) || [];
-            const newBatch: Batch = {
-                id: `batch_${purchase.id}_${item.productId}`,
-                quantity: item.quantity * item.unitFactor,
-                expiryDate: item.expiryDate,
-                purchaseId: purchase.id
-            };
-            productStockUpdates.set(item.productId, [...currentBatches, newBatch]);
-        }
+        initializeSync();
 
-        // Update supplier balance
-        const dueAmount = purchase.total - purchase.amountPaid;
-        if (dueAmount > 0) {
-            const currentUpdate = supplierBalanceUpdates.get(purchase.supplierId) || 0;
-            supplierBalanceUpdates.set(purchase.supplierId, currentUpdate + dueAmount);
-        }
-    }
-
-    products.forEach(p => {
-        if (productStockUpdates.has(p.id)) {
-            const newBatches = productStockUpdates.get(p.id)!;
-            p.batches.push(...newBatches);
-            p.stock = p.batches.reduce((sum, batch) => sum + batch.quantity, 0);
-        }
-    });
-
-    suppliers.forEach(s => {
-        if (supplierBalanceUpdates.has(s.id)) {
-            s.balance += supplierBalanceUpdates.get(s.id)!;
-        }
-    });
-
-    return { products, suppliers };
+        return () => {
+            removeListener();
+        };
+    }, [setters, onSyncStatusChange]);
 };
 
-const { products: processedInitialProducts, suppliers: processedInitialSuppliers } = processInitialData();
 
 const usePosState = () => {
-    const { t } = useTranslation();
-    const [isLoading, setIsLoading] = useState(true);
     const [products, setProducts] = useState<Product[]>([]);
     const [cart, setCart] = useState<CartItem[]>([]);
     const [sales, setSales] = useState<Sale[]>([]);
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [customerPayments, setCustomerPayments] = useState<CustomerPayment[]>([]);
-    const [taxRate, setTaxRate] = useState<number>(15);
-    const [categories, setCategories] = useState<Category[]>([]);
     const [supplierPayments, setSupplierPayments] = useState<SupplierPayment[]>([]);
-    const [showTaxInReceipt, setShowTaxInReceipt] = useState<boolean>(true);
+    const [categories, setCategories] = useState<Category[]>([]);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [parkedSales, setParkedSales] = useState<ParkedSale[]>([]);
     const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
-    const [storeInfo, setStoreInfo] = useState(initialStoreInfo);
-    const [users, setUsers] = useState<User[]>([]);
-    const [currentUser, setCurrentUser] = useState<User | null>(() => {
-        try {
-            const userJson = window.sessionStorage.getItem('pos_current_user');
-            return userJson ? JSON.parse(userJson) : null;
-        } catch (error) {
-            return null;
-        }
-    });
-    const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
-    const [expenses, setExpenses] = useState<Expense[]>([]);
-    // FIX: Add state for purchases.
     const [purchases, setPurchases] = useState<Purchase[]>([]);
     const [supplierReturns, setSupplierReturns] = useState<SupplierReturn[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
+    const [currentUser, setCurrentUser] = useState<User | null>(null);
+    const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
+    const [expenses, setExpenses] = useState<Expense[]>([]);
+    const [autoBackups, setAutoBackups] = useState<AutoBackup[]>([]);
+
+    // Settings state
+    const [taxRate, setTaxRate] = useState(14);
+    const [showTaxInReceipt, setShowTaxInReceipt] = useState(true);
+    const [storeInfo, setStoreInfo] = useState({ name: 'متجر مورو POS', address: '123 شارع التجارة, القاهرة', phone: '01234567890', logoUrl: '' });
+    const [syncServerUrl, setSyncServerUrl] = useState('');
+    const [syncStatus, setSyncStatus] = useState<SyncStatus>('disconnected');
+    const [autoBackupTime, setAutoBackupTime] = useState('23:00');
+    const [backupDirectoryHandle, setBackupDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
+
+
+    const [isLoading, setIsLoading] = useState(true);
+    const { t } = useTranslation();
+
+    const dataSetters = useMemo(() => ({
+        setProducts, setSales, setCustomers, setSuppliers, setCustomerPayments, setSupplierPayments,
+        setCategories, setParkedSales, setAdjustments, setPurchases, setSupplierReturns, setUsers,
+        setWorkSessions, setExpenses
+    }), []);
+
+    useDataSync(dataSetters, setSyncStatus);
+    
+    const checkStockAndExpiry = useCallback(() => {
+        let newNotifications: Notification[] = [];
+        const thirtyDaysFromNow = new Date();
+        thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+
+        products.forEach(p => {
+            // Low stock check
+            if (p.stock <= 10 && p.stock > 0) {
+                newNotifications.push({ id: `low_${p.id}`, messageKey: 'notifLowStock', messageArgs: [p.name, Math.floor(p.stock)], type: 'low_stock', read: false, productId: p.id });
+            }
+            // Expiry check
+            const hasExpiringBatch = (p.batches || []).some(batch => 
+                batch.expiryDate && new Date(batch.expiryDate) <= thirtyDaysFromNow
+            );
+            if (hasExpiringBatch) {
+                newNotifications.push({ id: `exp_${p.id}`, messageKey: 'notifExpiry', messageArgs: [p.name], type: 'expiry', read: false, productId: p.id });
+            }
+        });
+        
+        setNotifications(newNotifications);
+    }, [products]);
+    
+    const fetchAutoBackups = useCallback(async () => {
+        try {
+          const backups = await db.autoBackups.orderBy('id').reverse().toArray();
+          setAutoBackups(backups);
+        } catch (error) {
+          console.error("Failed to fetch auto backups:", error);
+        }
+    }, []);
+
+    const checkAndPerformAutomaticBackup = useCallback(async (backupTime: string, dirHandle: FileSystemDirectoryHandle | null) => {
+        try {
+            const lastBackup = await db.autoBackups.orderBy('id').reverse().first();
+            const lastBackupDateStr = lastBackup?.id;
+
+            const now = new Date();
+            const [hours, minutes] = backupTime.split(':').map(Number);
+
+            const scheduledTimeToday = new Date();
+            scheduledTimeToday.setHours(hours, minutes, 0, 0);
+
+            let backupTargetDate = new Date();
+            if (now < scheduledTimeToday) {
+                // If current time is before today's scheduled time, the last potential backup was for yesterday.
+                backupTargetDate.setDate(backupTargetDate.getDate() - 1);
+            }
+
+            const backupTargetDateStr = backupTargetDate.toISOString().split('T')[0];
+
+            if (!lastBackupDateStr || lastBackupDateStr < backupTargetDateStr) {
+                console.log(`Performing automatic backup for date: ${backupTargetDateStr}`);
+                const blob = await exportDB(db);
+
+                // Save to IndexedDB (as before)
+                await db.autoBackups.put({ id: backupTargetDateStr, blob, createdAt: new Date() });
+
+                // Save to file system if handle exists
+                if (dirHandle) {
+                    try {
+                        // FIX: Cast dirHandle to 'any' to resolve missing type definitions for File System Access API
+                        const permission = await (dirHandle as any).queryPermission({ mode: 'readwrite' });
+                        if (permission === 'granted' || (await (dirHandle as any).requestPermission({ mode: 'readwrite' })) === 'granted') {
+                            const fileName = `pos-autobackup-${backupTargetDateStr}.json`;
+                            const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+                            const writable = await fileHandle.createWritable();
+                            await writable.write(blob);
+                            await writable.close();
+                            console.log(t('autoBackupSavedToFile'));
+                        } else {
+                            console.error(t('autoBackupFileSaveError'));
+                        }
+                    } catch (fsError) {
+                        console.error(t('autoBackupFileSaveError'), fsError);
+                    }
+                }
+
+                // Cleanup old backups (keep last 7)
+                const allBackups = await db.autoBackups.orderBy('id').reverse().toArray();
+                if (allBackups.length > 7) {
+                    const toDelete = allBackups.slice(7).map(b => b.id);
+                    await db.autoBackups.bulkDelete(toDelete);
+                    console.log(`Deleted ${toDelete.length} old backups.`);
+                }
+                await fetchAutoBackups(); // Refresh the list in state
+            } else {
+                console.log("Automatic backup is up to date.");
+            }
+        } catch (error) {
+            console.error("Automatic backup check failed:", error);
+        }
+    }, [fetchAutoBackups, t]);
 
 
     useEffect(() => {
-        const loadData = async () => {
+        const loadInitialData = async () => {
             setIsLoading(true);
             try {
-                const userCount = await db.users.count();
-                if (userCount === 0) {
-                    await db.transaction('rw', db.tables, async () => {
+                const dbIsEmpty = await db.products.count() === 0;
+                if (dbIsEmpty) {
+                    // FIX: Replaced multiple arguments with an array for the list of tables in a transaction.
+                    await db.transaction('rw', [db.products, db.categories, db.customers, db.suppliers, db.users], async () => {
+                        await db.products.bulkAdd(initialProducts as any);
                         await db.categories.bulkAdd(initialCategories);
-                        await db.products.bulkAdd(processedInitialProducts);
                         await db.customers.bulkAdd(initialCustomers);
-                        await db.suppliers.bulkAdd(processedInitialSuppliers);
+                        await db.suppliers.bulkAdd(initialSuppliers);
                         await db.users.bulkAdd(initialUsers);
-                        await db.purchases.bulkAdd(initialPurchases);
-                        await db.settings.bulkAdd([
-                            { key: 'taxRate', value: 15 },
-                            { key: 'showTaxInReceipt', value: true },
-                            { key: 'storeInfo', value: initialStoreInfo }
-                        ]);
                     });
                 }
-                
                 const [
-                    dbProducts, dbCategories, dbSales, dbCustomers, dbSuppliers,
-                    dbCustomerPayments, dbSupplierPayments, dbAdjustments,
-                    dbParkedSales, dbUsers, taxRateSetting, showTaxSetting, storeInfoSetting,
-                    dbWorkSessions, dbExpenses, dbPurchases, dbSupplierReturns
+                    productsData, categoriesData, salesData, customersData, suppliersData,
+                    customerPaymentsData, supplierPaymentsData, parkedSalesData, adjustmentsData,
+                    purchasesData, supplierReturnsData, usersData, workSessionsData, expensesData,
+                    taxRateSetting, showTaxSetting, storeInfoSetting, syncUrlSetting, autoBackupTimeSetting,
+                    backupDirHandleSetting
                 ] = await Promise.all([
-                    db.products.orderBy('name').toArray(),
-                    db.categories.toArray(),
-                    db.sales.orderBy('date').reverse().toArray(),
-                    db.customers.orderBy('name').toArray(),
-                    db.suppliers.orderBy('name').toArray(),
-                    db.customerPayments.orderBy('date').reverse().toArray(),
-                    db.supplierPayments.orderBy('date').reverse().toArray(),
-                    db.adjustments.orderBy('date').reverse().toArray(),
-                    db.parkedSales.orderBy('date').reverse().toArray(),
-                    db.users.toArray(),
-                    db.settings.get('taxRate'),
-                    db.settings.get('showTaxInReceipt'),
-                    db.settings.get('storeInfo'),
-                    db.workSessions.orderBy('startTime').reverse().toArray(),
-                    db.expenses.orderBy('date').reverse().toArray(),
-                    db.purchases.orderBy('date').reverse().toArray(),
-                    db.supplierReturns.orderBy('date').reverse().toArray(),
+                    apiClient.getProducts(), apiClient.getCategories(), apiClient.getSales(), apiClient.getCustomers(), apiClient.getSuppliers(),
+                    apiClient.getCustomerPayments(), apiClient.getSupplierPayments(), apiClient.getParkedSales(), apiClient.getAdjustments(),
+                    apiClient.getPurchases(), apiClient.getSupplierReturns(), apiClient.getUsers(), apiClient.getWorkSessions(), apiClient.getExpenses(),
+                    db.settings.get('taxRate'), db.settings.get('showTaxInReceipt'), db.settings.get('storeInfo'), db.settings.get('syncServerUrl'), db.settings.get('autoBackupTime'),
+                    db.settings.get('backupDirectoryHandle')
                 ]);
 
-                // Backward compatibility: ensure batches exist and stock is correct
-                dbProducts.forEach(p => {
-                    if (!p.batches) p.batches = [];
-                    const totalStockFromBatches = p.batches.reduce((sum, batch) => sum + batch.quantity, 0);
-                    if (p.stock !== totalStockFromBatches) {
-                        p.stock = totalStockFromBatches;
-                    }
-                    if (!p.sellingMethod) {
-                        p.sellingMethod = 'unit'; // Default for old products
-                    }
-                });
+                setProducts(productsData);
+                setCategories(categoriesData);
+                setSales(salesData);
+                setCustomers(customersData);
+                setSuppliers(suppliersData);
+                setCustomerPayments(customerPaymentsData);
+                setSupplierPayments(supplierPaymentsData);
+                setParkedSales(parkedSalesData);
+                setAdjustments(adjustmentsData);
+                setPurchases(purchasesData);
+                setSupplierReturns(supplierReturnsData);
+                setUsers(usersData);
+                setWorkSessions(workSessionsData);
+                setExpenses(expensesData);
 
-                setProducts(dbProducts);
-                setCategories(dbCategories);
-                setSales(dbSales);
-                setCustomers(dbCustomers);
-                setSuppliers(dbSuppliers);
-                setCustomerPayments(dbCustomerPayments);
-                setSupplierPayments(dbSupplierPayments);
-                setAdjustments(dbAdjustments);
-                setParkedSales(dbParkedSales);
-                setUsers(dbUsers);
-                setTaxRate(taxRateSetting?.value ?? 15);
-                setShowTaxInReceipt(showTaxSetting?.value ?? true);
-                setStoreInfo(storeInfoSetting?.value ?? initialStoreInfo);
-                setWorkSessions(dbWorkSessions);
-                setExpenses(dbExpenses);
-                setPurchases(dbPurchases);
-                setSupplierReturns(dbSupplierReturns);
+                if (taxRateSetting) setTaxRate(taxRateSetting.value);
+                if (showTaxSetting) setShowTaxInReceipt(showTaxSetting.value);
+                if (storeInfoSetting) setStoreInfo(storeInfoSetting.value);
+                if (syncUrlSetting) setSyncServerUrl(syncUrlSetting.value);
+                if (backupDirHandleSetting) setBackupDirectoryHandle(backupDirHandleSetting.value);
+                
+                const backupTime = autoBackupTimeSetting?.value || '23:00';
+                setAutoBackupTime(backupTime);
+
+                const loggedInUser = sessionStorage.getItem('currentUser');
+                if(loggedInUser) {
+                    setCurrentUser(JSON.parse(loggedInUser));
+                }
+                
+                checkAndPerformAutomaticBackup(backupTime, backupDirHandleSetting?.value || null);
+                fetchAutoBackups();
 
             } catch (error) {
-                console.error("Failed to load data from database", error);
+                console.error("Failed to load initial data:", error);
             } finally {
                 setIsLoading(false);
             }
         };
-        loadData();
-    }, []);
 
+        loadInitialData();
+    }, [checkAndPerformAutomaticBackup, fetchAutoBackups]);
+    
+    useEffect(() => {
+        checkStockAndExpiry();
+    }, [products, checkStockAndExpiry]);
 
-    const login = useCallback((username, password): boolean => {
+    const login = useCallback((username, password) => {
         const user = users.find(u => u.username === username && u.password === password);
         if (user) {
             setCurrentUser(user);
-            window.sessionStorage.setItem('pos_current_user', JSON.stringify(user));
+            sessionStorage.setItem('currentUser', JSON.stringify(user));
             return true;
         }
         return false;
@@ -347,97 +306,40 @@ const usePosState = () => {
 
     const logout = useCallback(() => {
         setCurrentUser(null);
-        window.sessionStorage.removeItem('pos_current_user');
+        sessionStorage.removeItem('currentUser');
     }, []);
 
-    const updateStoreInfo = useCallback(async (newInfo: Partial<typeof storeInfo>) => {
-        const updatedInfo = { ...storeInfo, ...newInfo };
-        await db.settings.put({ key: 'storeInfo', value: updatedInfo });
-        setStoreInfo(updatedInfo);
-    }, [storeInfo]);
-
-    useEffect(() => {
-        // Low stock notifications
-        const lowStockProducts = products.filter(p => p.stock > 0 && p.stock < 10);
-        
-        // Expiry notifications
-        const EXPIRY_THRESHOLD_DAYS = 30;
-        const thresholdDate = new Date();
-        thresholdDate.setDate(thresholdDate.getDate() + EXPIRY_THRESHOLD_DAYS);
-        const today = new Date();
-        today.setHours(0,0,0,0);
-
-
-        const expiringProducts = products.filter(p => 
-            p.batches.some(b => b.expiryDate && new Date(b.expiryDate) <= thresholdDate && new Date(b.expiryDate) >= today)
-        );
-
-        setNotifications(prevNotifications => {
-            const newNotifications: Notification[] = [];
-            const existingProductIdsInNotif = new Set(prevNotifications.map(n => n.productId));
-    
-            lowStockProducts.forEach(p => {
-                if (!existingProductIdsInNotif.has(p.id)) {
-                    newNotifications.push({
-                        id: `notif_low_${p.id}_${Date.now()}`,
-                        productId: p.id,
-                        messageKey: 'notifLowStock',
-                        messageArgs: [p.name, Math.floor(p.stock)],
-                        type: 'low_stock',
-                        read: false,
-                    });
-                }
-            });
-
-            expiringProducts.forEach(p => {
-                if (!existingProductIdsInNotif.has(p.id)) {
-                    newNotifications.push({
-                        id: `notif_exp_${p.id}_${Date.now()}`,
-                        productId: p.id,
-                        messageKey: 'notifExpiry',
-                        messageArgs: [p.name],
-                        type: 'expiry',
-                        read: false,
-                    });
-                }
-            });
-    
-            const relevantProductIds = new Set([...lowStockProducts.map(p => p.id), ...expiringProducts.map(p => p.id)]);
-            const stillRelevantNotifications = prevNotifications.filter(n => relevantProductIds.has(n.productId));
-    
-            return [...stillRelevantNotifications, ...newNotifications];
-        });
-    
-    }, [products, t]);
-    
-    const dismissNotification = useCallback((notificationId: string) => {
-        setNotifications(prev => prev.filter(n => n.id !== notificationId));
-    }, []);
-
-    const updateShowTaxInReceipt = useCallback(async (show: boolean) => {
-        await db.settings.put({ key: 'showTaxInReceipt', value: show });
-        setShowTaxInReceipt(show);
-    }, []);
+    const dismissNotification = (id: string) => {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+    };
 
     const addToCart = useCallback((product: Product, unit: Unit, quantity: number = 1) => {
+        if(product.stock <= 0) {
+            alert(t('productNotFoundInStock', product.name));
+            return;
+        }
         setCart(prevCart => {
             const existingItem = prevCart.find(item => item.id === product.id && item.unit.id === unit.id);
             if (existingItem) {
                 return prevCart.map(item =>
-                    item.id === product.id && item.unit.id === unit.id ? { ...item, quantity: item.quantity + quantity } : item
+                    item.id === product.id && item.unit.id === unit.id
+                        ? { ...item, quantity: item.quantity + quantity }
+                        : item
                 );
+            } else {
+                return [...prevCart, { id: product.id, name: product.name, quantity, imageUrl: product.imageUrl, unit, costPrice: unit.costPrice }];
             }
-            return [...prevCart, { id: product.id, name: product.name, quantity: quantity, imageUrl: product.imageUrl, unit, costPrice: unit.costPrice }];
         });
-    }, []);
+    }, [t]);
 
     const updateCartQuantity = useCallback((productId: string, unitId: string, quantity: number) => {
+        if(quantity < 0) return;
         setCart(prevCart => {
-            if (quantity <= 0) {
+             if (quantity === 0) {
                 return prevCart.filter(item => !(item.id === productId && item.unit.id === unitId));
             }
             return prevCart.map(item =>
-                (item.id === productId && item.unit.id === unitId) ? { ...item, quantity } : item
+                item.id === productId && item.unit.id === unitId ? { ...item, quantity } : item
             );
         });
     }, []);
@@ -449,653 +351,533 @@ const usePosState = () => {
     const clearCart = useCallback(() => {
         setCart([]);
     }, []);
-
-    const completeSale = useCallback(async (payments: SalePayment[], customerName: string, discount: number, createNewCustomer: boolean): Promise<{ sale: Sale, customer: Customer } | null> => {
-        if (cart.length === 0) return null;
-
-        let customerToUse: Customer | undefined = customers.find(c => c.name.trim().toLowerCase() === customerName.trim().toLowerCase());
-        let finalCustomerForReceipt: Customer;
-
-        if (!customerToUse) {
-            if (createNewCustomer) {
-                const newCustomer: Customer = { id: `CUS-${Date.now().toString().slice(-7)}`, balance: 0, name: customerName.trim(), phone: '', email: '', address: '' };
-                await db.customers.add(newCustomer);
-                setCustomers(prev => [newCustomer, ...prev].sort((a,b) => a.name.localeCompare(b.name)));
-                customerToUse = newCustomer;
-                finalCustomerForReceipt = newCustomer;
-            } else {
-                customerToUse = customers.find(c => c.id === 'c1');
-                if (!customerToUse) {
-                    console.error("Cash customer (c1) not found!");
-                    return null;
-                }
-                finalCustomerForReceipt = { ...customerToUse, name: customerName };
-            }
-        } else {
-            finalCustomerForReceipt = customerToUse;
-        }
+    
+    const completeSale = useCallback(async (payments: SalePayment[], customerName: string, totalDiscount: number, createNewCustomer: boolean): Promise<{sale: Sale, customer: Customer}> => {
+        if (cart.length === 0) throw new Error("Cart is empty");
         
-        const customerIdToUse = customerToUse.id;
-        const customerNameToUse = createNewCustomer || customerToUse.id !== 'c1' ? customerToUse.name : customerName;
+        let customer: Customer | undefined;
+        if (createNewCustomer) {
+            const newCustomer = await apiClient.addCustomer({ name: customerName, phone: '', email: '', address: '' });
+            setCustomers(prev => [...prev, newCustomer]);
+            customer = newCustomer;
+        } else {
+             customer = customers.find(c => c.name.trim().toLowerCase() === customerName.trim().toLowerCase()) || customers.find(c => c.id === 'c1');
+        }
+
+        if(!customer) throw new Error("Customer not found");
 
         const subtotal = cart.reduce((acc, item) => acc + item.unit.price * item.quantity, 0);
-        const totalDiscount = discount;
         const subtotalAfterDiscount = subtotal - totalDiscount;
         const tax = subtotalAfterDiscount * (taxRate / 100);
         const total = subtotalAfterDiscount + tax;
         const totalCost = cart.reduce((acc, item) => acc + item.costPrice * item.quantity, 0);
 
-        const amountPaid = payments.reduce((sum, p) => p.method !== 'deferred' ? sum + p.amount : sum, 0);
-        const amountDue = total - amountPaid;
-
-        if (amountDue > 0 && customerIdToUse !== 'c1') {
-            const updatedBalance = customerToUse.balance + amountDue;
-            await db.customers.update(customerIdToUse, { balance: updatedBalance });
-            setCustomers(prevCustomers => prevCustomers.map(c => c.id === customerIdToUse ? {...c, balance: updatedBalance} : c));
-            finalCustomerForReceipt = { ...finalCustomerForReceipt, balance: updatedBalance };
-        }
-
-        const newSale: Sale = {
-            id: `INV-${Date.now().toString().slice(-7)}`, items: cart, subtotal, tax, totalDiscount, total, taxRate,
-            payments, date: new Date().toISOString(), customerId: customerIdToUse, customerName: customerNameToUse, totalCost,
+        const sale: Sale = {
+            id: `SALE-${Date.now()}`,
+            items: cart,
+            subtotal,
+            tax,
+            totalDiscount,
+            total,
+            taxRate,
+            payments,
+            date: new Date().toISOString(),
+            customerId: customer.id,
+            customerName: customer.name,
+            totalCost,
         };
-        
-        await db.sales.add(newSale);
-        setSales(prevSales => [newSale, ...prevSales]);
 
-        // FEFO Stock Deduction Logic
-        const updatedProducts = new Map<string, Product>();
-
+        const stockUpdates: Map<string, number> = new Map();
         for (const item of cart) {
-            const product = updatedProducts.get(item.id) || await db.products.get(item.id);
-            if (!product) continue;
+            const stockChange = item.quantity * item.unit.factor;
+            stockUpdates.set(item.id, (stockUpdates.get(item.id) || 0) + stockChange);
+        }
 
-            let quantityToDeduct = item.quantity * item.unit.factor;
-
-            const sortedBatches = [...product.batches].sort((a, b) => {
-                if (!a.expiryDate && !b.expiryDate) return 0;
-                if (!a.expiryDate) return 1;
-                if (!b.expiryDate) return -1;
-                return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
-            });
-
-            const remainingBatches: Batch[] = [];
-            for (const batch of sortedBatches) {
-                if (quantityToDeduct <= 0) {
-                    remainingBatches.push(batch);
-                    continue;
-                }
-                if (batch.quantity > quantityToDeduct) {
-                    batch.quantity -= quantityToDeduct;
-                    quantityToDeduct = 0;
-                    remainingBatches.push(batch);
-                } else {
-                    quantityToDeduct -= batch.quantity;
-                }
+        const productsToUpdate: Product[] = [];
+        for (const p of products) {
+            if (stockUpdates.has(p.id)) {
+                productsToUpdate.push(p);
             }
-            product.batches = remainingBatches;
-            product.stock = product.batches.reduce((sum, b) => sum + b.quantity, 0);
+        }
+        
+        let updatedCustomer: Customer = customer;
+
+        await apiClient.performTransaction(async () => {
+            for (const product of productsToUpdate) {
+                const stockChange = stockUpdates.get(product.id)!;
+                if(product.stock < stockChange) {
+                    throw new Error(t('insufficientStockError', product.name, stockChange, product.stock));
+                }
+
+                let remainingChange = stockChange;
+                const updatedBatches = [...product.batches];
+
+                // Sort batches: those with expiry dates first, then by addition date (implicitly by order)
+                updatedBatches.sort((a, b) => {
+                    if (a.expiryDate && b.expiryDate) return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+                    if (a.expiryDate) return -1;
+                    if (b.expiryDate) return 1;
+                    return 0; 
+                });
+                
+                for (let i = 0; i < updatedBatches.length && remainingChange > 0; i++) {
+                    const batch = updatedBatches[i];
+                    const amountToDeduct = Math.min(batch.quantity, remainingChange);
+                    batch.quantity -= amountToDeduct;
+                    remainingChange -= amountToDeduct;
+                }
+                
+                product.stock -= stockChange;
+                product.batches = updatedBatches.filter(b => b.quantity > 0);
+            }
+            await apiClient.bulkUpdateProducts(productsToUpdate);
+
+            // Update customer balance for deferred payments
+            const deferredAmount = payments.find(p => p.method === 'deferred')?.amount || 0;
+            if (customer && customer.id !== 'c1' && deferredAmount > 0) {
+                customer.balance += deferredAmount;
+                updatedCustomer = {...customer};
+                await apiClient.updateCustomer(customer);
+            }
             
-            await db.products.put(product);
-            updatedProducts.set(product.id, product);
+            await apiClient.addSale(sale);
+        });
+
+        setProducts(prev => prev.map(p => productsToUpdate.find(up => up.id === p.id) || p));
+        if (customer.id !== 'c1') {
+            setCustomers(prev => prev.map(c => c.id === customer!.id ? updatedCustomer : c));
         }
-
-        setProducts(prevProducts => prevProducts.map(p => updatedProducts.get(p.id) || p));
-
+        setSales(prev => [sale, ...prev]);
         clearCart();
-        return { sale: newSale, customer: finalCustomerForReceipt };
-    }, [cart, clearCart, customers, taxRate, t]);
-    
-    const addProduct = useCallback(async (product: Omit<Product, 'id' | 'batches'> & { expiryDate?: string }) => {
-        const { expiryDate, ...productData } = product;
-        
-        const newProduct: Product = {
-            id: `PROD-${Date.now().toString().slice(-7)}`, 
-            ...productData,
-            sellingMethod: productData.sellingMethod || 'unit',
-            units: productData.units.map((u, index) => ({...u, id: `u_${Date.now()}_${index}`})),
-            batches: [],
-        };
+        return { sale, customer: updatedCustomer };
+    }, [cart, customers, taxRate, products, clearCart, t]);
 
-        if (!newProduct.sku || newProduct.sku.trim() === '') {
-            newProduct.sku = `SKU${Math.floor(100000 + Math.random() * 900000)}`;
-        }
-
-        if (newProduct.stock > 0) {
-            newProduct.batches.push({
-                id: `batch_initial_${newProduct.id}`,
-                quantity: newProduct.stock,
-                expiryDate: expiryDate
-            });
-        }
-
-        if (!newProduct.imageUrl) newProduct.imageUrl = `https://via.placeholder.com/200x200.png?text=${encodeURIComponent(newProduct.name)}`;
-        
-        await db.products.add(newProduct);
-        setProducts(prev => [newProduct, ...prev]);
-    }, []);
-    
-    const updateProduct = useCallback(async (updatedProduct: Product) => {
-        if (!updatedProduct.imageUrl) updatedProduct.imageUrl = `https://via.placeholder.com/200x200.png?text=${encodeURIComponent(updatedProduct.name)}`;
-        updatedProduct.units = updatedProduct.units.map((u, index) => ({...u, id: u.id || `u_${updatedProduct.id}_${index}`}));
-        if (!updatedProduct.sellingMethod) updatedProduct.sellingMethod = 'unit';
-
-        await db.products.put(updatedProduct);
-        setProducts(prev => prev.map(p => p.id === updatedProduct.id ? updatedProduct : p));
-    }, []);
-
-    const deleteProduct = useCallback(async (productId: string) => {
-        await db.products.delete(productId);
-        setProducts(prev => prev.filter(p => p.id !== productId));
-    }, []);
-
-    const addCustomer = useCallback(async (customer: Omit<Customer, 'id' | 'balance'>) => {
-        const newCustomer: Customer = { id: `CUS-${Date.now().toString().slice(-7)}`, balance: 0, ...customer };
-        await db.customers.add(newCustomer);
-        setCustomers(prev => [newCustomer, ...prev]);
-    }, []);
-
-    const updateCustomer = useCallback(async (updatedCustomer: Customer) => {
-        await db.customers.put(updatedCustomer);
-        setCustomers(prev => prev.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
-    }, []);
-
-    const deleteCustomer = useCallback(async (customerId: string) => {
-        await db.customers.delete(customerId);
-        setCustomers(prev => prev.filter(c => c.id !== customerId));
-    }, []);
-
-    const addSupplier = useCallback(async (supplier: Omit<Supplier, 'id' | 'balance'>) => {
-        const newSupplier: Supplier = { id: `SUP-${Date.now().toString().slice(-7)}`, balance: 0, ...supplier };
-        await db.suppliers.add(newSupplier);
-        setSuppliers(prev => [newSupplier, ...prev]);
-    }, []);
-    
-    const updateSupplier = useCallback(async (updatedSupplier: Supplier) => {
-        await db.suppliers.put(updatedSupplier);
-        setSuppliers(prev => prev.map(s => s.id === updatedSupplier.id ? updatedSupplier : s));
-    }, []);
-
-    const deleteSupplier = useCallback(async (supplierId: string) => {
-        await db.suppliers.delete(supplierId);
-        setSuppliers(prev => prev.filter(s => s.id !== supplierId));
-    }, []);
-
-    const updateTaxRate = useCallback(async (newRate: number) => {
-        if (newRate >= 0) {
-            await db.settings.put({ key: 'taxRate', value: newRate });
-            setTaxRate(newRate);
-        }
-    }, []);
-
-    const addCustomerPayment = useCallback(async (payment: Omit<CustomerPayment, 'id' | 'date'>) => {
-        const newPayment: CustomerPayment = { id: `PAY-C-${Date.now().toString().slice(-7)}`, date: new Date().toISOString(), ...payment };
-        await db.customerPayments.add(newPayment);
-        setCustomerPayments(prev => [newPayment, ...prev]);
-
-        await db.customers.where('id').equals(payment.customerId).modify(c => { c.balance -= payment.amount; });
-        setCustomers(prev => prev.map(c => c.id === payment.customerId ? { ...c, balance: c.balance - payment.amount } : c));
-    }, []);
-
-    const addCategory = useCallback(async (category: Omit<Category, 'id'>) => {
-        const newCategory: Category = {
-            id: `CAT-${Date.now().toString().slice(-7)}`,
-            ...category,
-            imageUrl: category.imageUrl || `https://via.placeholder.com/200x200.png?text=${encodeURIComponent(category.name)}`
-        };
-        await db.categories.add(newCategory);
-        setCategories(prev => [newCategory, ...prev]);
-    }, []);
-
-    const updateCategory = useCallback(async (updatedCategory: Category) => {
-        if (!updatedCategory.imageUrl) {
-            updatedCategory.imageUrl = `https://via.placeholder.com/200x200.png?text=${encodeURIComponent(updatedCategory.name)}`;
-        }
-        await db.categories.put(updatedCategory);
-        setCategories(prev => prev.map(c => c.id === updatedCategory.id ? updatedCategory : c));
-    }, []);
-
-    const deleteCategory = useCallback(async (categoryId: string): Promise<boolean> => {
-        const descendantIds: string[] = [];
-        const queue = [categoryId];
-        while (queue.length > 0) {
-            const currentId = queue.shift()!;
-            descendantIds.push(currentId);
-            const children = await db.categories.where('parentId').equals(currentId).toArray();
-            children.forEach(child => queue.push(child.id));
-        }
-
-        const isCategoryInUse = (await db.products.where('categoryId').anyOf(descendantIds).count()) > 0;
-        if (isCategoryInUse) {
-            alert(t('categoryInUseError'));
-            return false;
-        }
-
-        await db.categories.bulkDelete(descendantIds);
-        setCategories(prev => prev.filter(c => !descendantIds.includes(c.id)));
-        return true;
-    }, [t]);
-
+    // FIX: Renamed from `updateSaleItems` to `updateSale` to match component props.
     const updateSale = useCallback(async (saleId: string, updatedItems: CartItem[]) => {
         const originalSale = await db.sales.get(saleId);
         if (!originalSale) return;
 
-        // 1. Calculate stock adjustments for returned items
-        const stockAdjustments = new Map<string, number>(); // <productId, quantityChangeInBaseUnit>
-        const originalItemsMap = new Map(originalSale.items.map(i => [`${i.id}-${i.unit.id}`, i]));
+        const originalItemsMap = new Map(originalSale.items.map(item => [`${item.id}-${item.unit.id}`, item]));
+        const updatedItemsMap = new Map(updatedItems.map(item => [`${item.id}-${item.unit.id}`, item]));
+        const stockChanges = new Map<string, number>();
 
-        originalSale.items.forEach(originalItem => {
-            const updatedItem = updatedItems.find(item => item.id === originalItem.id && item.unit.id === originalItem.unit.id);
-            const returnedQuantity = originalItem.quantity - (updatedItem?.quantity || 0);
-            
-            if (returnedQuantity > 0) {
-                const quantityInBaseUnit = returnedQuantity * originalItem.unit.factor;
-                stockAdjustments.set(originalItem.id, (stockAdjustments.get(originalItem.id) || 0) + quantityInBaseUnit);
-            }
+        // Calculate stock changes
+        originalItemsMap.forEach((originalItem, key) => {
+            const updatedItem = updatedItemsMap.get(key);
+            const quantityChange = (updatedItem?.quantity || 0) - originalItem.quantity; // negative if returned
+            const stockChange = quantityChange * originalItem.unit.factor;
+            stockChanges.set(originalItem.id, (stockChanges.get(originalItem.id) || 0) + stockChange);
         });
+        
+        const newSubtotal = updatedItems.reduce((sum, item) => sum + (item.unit.price * item.quantity), 0);
+        const newSubtotalAfterDiscount = newSubtotal - originalSale.totalDiscount;
+        const newTax = newSubtotalAfterDiscount * (originalSale.taxRate / 100);
+        const newTotal = newSubtotalAfterDiscount + newTax;
+        const newTotalCost = updatedItems.reduce((sum, item) => sum + (item.costPrice * item.quantity), 0);
 
-        const updatedProductsMap = new Map<string, Product>();
-        for (const [productId, quantityToAdd] of stockAdjustments.entries()) {
-            const product = await db.products.get(productId);
-            if (product) {
-                product.stock += quantityToAdd;
-                product.batches.push({
-                    id: `batch_return_${saleId}_${Date.now()}`,
-                    quantity: quantityToAdd,
-                });
-                await db.products.put(product);
-                updatedProductsMap.set(productId, product);
+        const balanceDifference = newTotal - originalSale.total;
+
+        const updatedSale: Sale = {
+            ...originalSale,
+            items: updatedItems,
+            subtotal: newSubtotal,
+            total: newTotal,
+            tax: newTax,
+            totalCost: newTotalCost
+        };
+
+        const productsToUpdate = await db.products.where('id').anyOf(...Array.from(stockChanges.keys())).toArray();
+
+        await apiClient.performTransaction(async () => {
+             // Revert stock
+            for(const product of productsToUpdate) {
+                const stockChange = stockChanges.get(product.id)!;
+                product.stock -= stockChange; // Subtracting the change (e.g., stock - (-5) = stock + 5 for returns)
+                // Note: Batch management for returns is complex and simplified here. We add stock back to a generic or new batch.
+                if (stockChange < 0) { // Item was returned, add stock back
+                    const returnedQuantity = Math.abs(stockChange);
+                    const mainBatch = product.batches[0];
+                    if (mainBatch) {
+                        mainBatch.quantity += returnedQuantity;
+                    } else {
+                        product.batches.push({ id: `ret_${saleId}_${product.id}`, quantity: returnedQuantity });
+                    }
+                }
             }
-        }
+            await apiClient.bulkUpdateProducts(productsToUpdate);
+            
+            // Update customer balance if applicable
+            if (originalSale.customerId && originalSale.customerId !== 'c1') {
+                await apiClient.updateCustomerBalance(originalSale.customerId, balanceDifference);
+            }
+            
+            await apiClient.updateSale(updatedSale);
+        });
         
-        // 2. Calculate financial adjustments
-        const newSubtotal = updatedItems.reduce((acc, item) => acc + item.unit.price * item.quantity, 0);
-        const newTotalCost = updatedItems.reduce((acc, item) => acc + item.costPrice * item.quantity, 0);
-        const subtotalAfterDiscount = newSubtotal - originalSale.totalDiscount;
-        const newTax = subtotalAfterDiscount * (originalSale.taxRate / 100);
-        const newTotal = subtotalAfterDiscount + newTax;
-        
-        const refundAmount = originalSale.total - newTotal;
-        
-        // 3. Update customer balance (credit them for the return)
-        if (originalSale.customerId && originalSale.customerId !== 'c1' && refundAmount > 0) {
-            await db.customers.where('id').equals(originalSale.customerId).modify(c => {
-                c.balance -= refundAmount;
-            });
-            setCustomers(prev => prev.map(c => 
-                c.id === originalSale.customerId ? { ...c, balance: c.balance - refundAmount } : c
-            ));
-        }
-
-        // 4. Update the sale record
-        const updatedSale = { ...originalSale, items: updatedItems, subtotal: newSubtotal, tax: newTax, total: newTotal, totalCost: newTotalCost };
-        await db.sales.put(updatedSale);
-        
-        // 5. Update state
-        setSales(prev => prev.map(s => s.id === saleId ? updatedSale : s));
-        setProducts(prev => prev.map(p => updatedProductsMap.get(p.id) || p));
-        
+        setProducts(await apiClient.getProducts());
+        setSales(await apiClient.getSales());
+        if(originalSale.customerId) setCustomers(await apiClient.getCustomers());
         alert(t('saleUpdatedSuccess'));
     }, [t]);
 
-    const addSupplierPayment = useCallback(async (payment: Omit<SupplierPayment, 'id' | 'date'>) => {
-        const newPayment: SupplierPayment = { id: `PAY-S-${Date.now().toString().slice(-7)}`, date: new Date().toISOString(), ...payment };
-        await db.supplierPayments.add(newPayment);
-        setSupplierPayments(prev => [newPayment, ...prev]);
-        
-        await db.suppliers.where('id').equals(payment.supplierId).modify(s => { s.balance -= payment.amount; });
-        setSuppliers(prev => prev.map(s => s.id === payment.supplierId ? { ...s, balance: s.balance - payment.amount } : s));
-    }, []);
-    
+    // Parked Sales handlers
     const parkSale = useCallback(async (customerId: string, notes?: string) => {
         if (cart.length === 0) return;
-        const subtotal = cart.reduce((acc, item) => acc + item.unit.price * item.quantity, 0);
-        const tax = subtotal * (taxRate / 100);
-        const total = subtotal + tax;
-        
-        const newParkedSale: ParkedSale = { id: `PARK-${Date.now().toString().slice(-7)}`, date: new Date().toISOString(), items: cart, customerId, notes, total };
-        await db.parkedSales.add(newParkedSale);
-        setParkedSales(prev => [newParkedSale, ...prev]);
+        const total = cart.reduce((acc, item) => acc + item.unit.price * item.quantity, 0);
+        const parkedSale: ParkedSale = {
+            id: `PARK-${Date.now()}`,
+            date: new Date().toISOString(),
+            items: cart,
+            customerId,
+            notes,
+            total
+        };
+        await apiClient.addParkedSale(parkedSale);
+        setParkedSales(prev => [parkedSale, ...prev]);
         clearCart();
-    }, [cart, taxRate, clearCart]);
+    }, [cart, clearCart]);
 
-    const retrieveSale = useCallback(async (saleId: string): Promise<string | null> => {
-        const saleToRetrieve = await db.parkedSales.get(saleId);
-        if (saleToRetrieve) {
-            const customer = await db.customers.get(saleToRetrieve.customerId);
-            setCart(saleToRetrieve.items);
-            await db.parkedSales.delete(saleId);
+    const retrieveSale = useCallback(async (saleId: string): Promise<string | undefined> => {
+        const parkedSale = await apiClient.getParkedSaleById(saleId);
+        if (parkedSale) {
+            setCart(parkedSale.items);
+            await apiClient.deleteParkedSale(saleId);
             setParkedSales(prev => prev.filter(s => s.id !== saleId));
-            return customer ? customer.name : 'زبون نقدي';
+            const customer = customers.find(c => c.id === parkedSale.customerId);
+            return customer?.name;
         }
-        return null;
-    }, []);
-    
+    }, [customers]);
+
     const deleteParkedSale = useCallback(async (saleId: string) => {
-        await db.parkedSales.delete(saleId);
+        await apiClient.deleteParkedSale(saleId);
         setParkedSales(prev => prev.filter(s => s.id !== saleId));
     }, []);
 
-    const addAdjustment = useCallback(async (adjustment: Omit<Adjustment, 'id' | 'date'>) => {
-        const newAdjustment: Adjustment = { id: `ADJ-${Date.now().toString().slice(-7)}`, date: new Date().toISOString(), ...adjustment };
-        await db.adjustments.add(newAdjustment);
-        setAdjustments(prev => [newAdjustment, ...prev]);
-        
-        const updatedProductsMap = new Map<string, Product>();
-
-        for (const item of adjustment.items) {
-            const product = updatedProductsMap.get(item.productId) || await db.products.get(item.productId);
-            if (!product) continue;
-            
-            const quantityInBase = item.quantityChange * item.unitFactor;
-            product.stock += quantityInBase;
-            
-            if (quantityInBase > 0) {
-                 product.batches.push({
-                    id: `batch_adj_${Date.now()}`,
-                    quantity: quantityInBase,
-                 });
-            } else {
-                // Simplified deduction: remove from latest batches first. For accurate expiry, FEFO would be needed here too.
-                let quantityToDeduct = Math.abs(quantityInBase);
-                product.batches.reverse(); // LIFO for adjustments
-                product.batches = product.batches.filter(b => {
-                    if (quantityToDeduct <= 0) return true;
-                    if (b.quantity > quantityToDeduct) {
-                        b.quantity -= quantityToDeduct;
-                        quantityToDeduct = 0;
-                        return true;
-                    } else {
-                        quantityToDeduct -= b.quantity;
-                        return false;
-                    }
-                }).reverse();
-            }
-
-            await db.products.put(product);
-            updatedProductsMap.set(product.id, product);
+    // Products
+    const addProduct = useCallback(async (productData: Omit<Product, 'id' | 'batches'> & { expiryDate?: string }) => {
+        const { expiryDate, ...restProductData } = productData;
+        const newProduct: Product = {
+            id: `PROD-${Date.now()}`,
+            batches: [],
+            ...restProductData
+        };
+        if (newProduct.stock > 0) {
+            newProduct.batches.push({
+                id: `batch_initial_${newProduct.id}`,
+                quantity: newProduct.stock,
+                expiryDate: expiryDate || undefined,
+            });
         }
-        setProducts(prev => prev.map(p => updatedProductsMap.get(p.id) || p));
+        await apiClient.addProduct(newProduct as any);
+        setProducts(await apiClient.getProducts());
+    }, []);
+    
+    const updateProduct = useCallback(async (product: Product) => {
+        await apiClient.updateProduct(product);
+        setProducts(await apiClient.getProducts());
+    }, []);
+    
+    const deleteProduct = useCallback(async (productId: string) => {
+        await apiClient.deleteProduct(productId);
+        setProducts(await apiClient.getProducts());
     }, []);
 
-    const addPurchase = useCallback(async (purchaseData: Omit<Purchase, 'id' | 'date' | 'supplierName'>) => {
-        const supplier = suppliers.find(s => s.id === purchaseData.supplierId);
-        if (!supplier) {
-            alert(t("supplierNotFound"));
-            return;
+    // Categories
+    const addCategory = useCallback(async (category: Omit<Category, 'id'>) => {
+        await apiClient.addCategory(category);
+        setCategories(await apiClient.getCategories());
+    }, []);
+    const updateCategory = useCallback(async (category: Category) => {
+        await apiClient.updateCategory(category);
+        setCategories(await apiClient.getCategories());
+    }, []);
+    const deleteCategory = useCallback(async (id: string) => {
+        const productCount = await apiClient.countProductsInCategory([id]);
+        if(productCount > 0){
+            alert(t('categoryInUseError'));
+            return false;
         }
+        await apiClient.deleteCategoryAndChildren(id);
+        setCategories(await apiClient.getCategories());
+        return true;
+    }, [t]);
 
-        const newPurchase: Purchase = {
-            id: `PUR-${Date.now().toString().slice(-7)}`,
-            date: new Date().toISOString(),
-            supplierName: supplier.name,
-            ...purchaseData,
-        };
-        
-        const updatedProductsMap = new Map<string, Product>();
+    // Customers
+    const addCustomer = useCallback(async (customer: Omit<Customer, 'id'|'balance'>) => {
+        const newCustomer = { id: `CUS-${Date.now()}`, balance: 0, ...customer };
+        await db.customers.add(newCustomer);
+        syncService.notify('customers');
+        setCustomers(await apiClient.getCustomers());
+    }, []);
 
-        try {
-            await db.transaction('rw', db.purchases, db.products, db.suppliers, async () => {
-                await db.purchases.add(newPurchase);
+    const updateCustomer = useCallback(async (customer: Customer) => {
+        await apiClient.updateCustomer(customer);
+        setCustomers(await apiClient.getCustomers());
+    }, []);
 
-                for (const item of newPurchase.items) {
-                    const product = await db.products.get(item.productId);
-                    if (!product) continue;
+    const deleteCustomer = useCallback(async (id: string) => {
+        await apiClient.deleteCustomer(id);
+        setCustomers(await apiClient.getCustomers());
+    }, []);
 
-                    const newBatch: Batch = {
-                        id: `batch_${newPurchase.id}_${item.productId}`,
-                        quantity: item.quantity * item.unitFactor,
-                        expiryDate: item.expiryDate,
-                        purchaseId: newPurchase.id,
-                    };
-                    product.batches.push(newBatch);
-                    product.stock = product.batches.reduce((sum, b) => sum + b.quantity, 0);
+    const addCustomerPayment = useCallback(async (payment: Omit<CustomerPayment, 'id'|'date'>) => {
+        await apiClient.addCustomerPayment(payment);
+        setCustomerPayments(await apiClient.getCustomerPayments());
+        setCustomers(await apiClient.getCustomers());
+    }, []);
+
+    // Suppliers
+    const addSupplier = useCallback(async (supplier: Omit<Supplier, 'id'|'balance'>) => {
+        await apiClient.addSupplier(supplier);
+        setSuppliers(await apiClient.getSuppliers());
+    }, []);
+
+    const updateSupplier = useCallback(async (supplier: Supplier) => {
+        await apiClient.updateSupplier(supplier);
+        setSuppliers(await apiClient.getSuppliers());
+    }, []);
+
+    const deleteSupplier = useCallback(async (id: string) => {
+        await apiClient.deleteSupplier(id);
+        setSuppliers(await apiClient.getSuppliers());
+    }, []);
+
+    const addSupplierPayment = useCallback(async (payment: Omit<SupplierPayment, 'id'|'date'>) => {
+        await apiClient.addSupplierPayment(payment);
+        setSupplierPayments(await apiClient.getSupplierPayments());
+        setSuppliers(await apiClient.getSuppliers());
+    }, []);
+    
+    const addAdjustment = useCallback(async (adjustmentData: Omit<Adjustment, 'id' | 'date'>) => {
+        const productsToUpdate = await db.products.where('id').anyOf(adjustmentData.items.map(i => i.productId)).toArray();
+
+        await apiClient.performTransaction(async () => {
+            for (const item of adjustmentData.items) {
+                const product = productsToUpdate.find(p => p.id === item.productId);
+                if (product) {
+                    const quantityInBaseUnit = item.quantityChange * item.unitFactor;
+                    product.stock += quantityInBaseUnit;
                     
-                    await db.products.put(product);
-                    updatedProductsMap.set(product.id, product);
+                    // Simplified batch management for adjustments
+                    if (quantityInBaseUnit > 0) { // Adding stock
+                        const newBatchId = `adj_add_${Date.now()}`;
+                        product.batches.push({ id: newBatchId, quantity: quantityInBaseUnit });
+                    } else { // Removing stock
+                        let quantityToRemove = -quantityInBaseUnit;
+                        for (let i = product.batches.length - 1; i >= 0 && quantityToRemove > 0; i--) {
+                            const batch = product.batches[i];
+                            const amountToRemove = Math.min(batch.quantity, quantityToRemove);
+                            batch.quantity -= amountToRemove;
+                            quantityToRemove -= amountToRemove;
+                        }
+                        product.batches = product.batches.filter(b => b.quantity > 0);
+                    }
+                }
+            }
+            await apiClient.bulkUpdateProducts(productsToUpdate);
+        });
+
+        const newAdjustment = { id: `ADJ-${Date.now()}`, date: new Date().toISOString(), ...adjustmentData };
+        await db.adjustments.add(newAdjustment);
+        syncService.notify('adjustments');
+        
+        setProducts(await apiClient.getProducts());
+        setAdjustments(await apiClient.getAdjustments());
+    }, []);
+    
+    // Purchases
+    const addPurchase = useCallback(async (purchaseData: Omit<Purchase, 'id'|'date'|'supplierName'>) => {
+        try {
+            await apiClient.performTransaction(async () => {
+                const supplier = await db.suppliers.get(purchaseData.supplierId);
+                if (!supplier) throw new Error("Supplier not found");
+
+                const newPurchase: Purchase = {
+                    id: `PUR-${Date.now()}`,
+                    date: new Date().toISOString(),
+                    supplierName: supplier.company,
+                    ...purchaseData
+                };
+
+                const productsToUpdate = await db.products.where('id').anyOf(purchaseData.items.map(i => i.productId)).toArray();
+                
+                for (const item of purchaseData.items) {
+                    const product = productsToUpdate.find(p => p.id === item.productId);
+                    if (product) {
+                        const quantityInBaseUnit = item.quantity * item.unitFactor;
+                        product.stock += quantityInBaseUnit;
+                        product.batches.push({
+                            id: `batch_${newPurchase.id}_${item.productId}`,
+                            quantity: quantityInBaseUnit,
+                            expiryDate: item.expiryDate,
+                            purchaseId: newPurchase.id,
+                        });
+                    }
                 }
                 
-                const amountDue = newPurchase.total - newPurchase.amountPaid;
-                if (amountDue > 0) {
-                    await db.suppliers.where('id').equals(newPurchase.supplierId).modify(s => {
-                        s.balance += amountDue;
-                    });
-                }
+                await apiClient.bulkUpdateProducts(productsToUpdate);
+
+                const balanceChange = purchaseData.total - purchaseData.amountPaid;
+                await apiClient.updateSupplierBalance(purchaseData.supplierId, balanceChange);
+
+                await db.purchases.add(newPurchase);
+                syncService.notify('purchases');
             });
-            
-            setPurchases(prev => [newPurchase, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-            setProducts(prev => prev.map(p => updatedProductsMap.get(p.id) || p));
-            
-            const amountDue = newPurchase.total - newPurchase.amountPaid;
-            if (amountDue > 0) {
-                setSuppliers(prev => prev.map(s => s.id === newPurchase.supplierId ? { ...s, balance: s.balance + amountDue } : s));
-            }
-        } catch(error) {
-            console.error("Failed to add purchase:", error);
-            alert(t("addPurchaseError"));
+
+            setProducts(await apiClient.getProducts());
+            setSuppliers(await apiClient.getSuppliers());
+            setPurchases(await apiClient.getPurchases());
+
+        } catch (error) {
+            console.error("Error adding purchase:", error);
+            alert(t('addPurchaseError'));
         }
-    }, [suppliers, t]);
+    }, [t]);
 
     const deletePurchase = useCallback(async (purchaseId: string) => {
-        const purchaseToDelete = await db.purchases.get(purchaseId);
-        if (!purchaseToDelete) {
-            alert(t('purchaseNotFound'));
-            return;
-        }
-
-        const updatedProductsMap = new Map<string, Product>();
-
         try {
-            await db.transaction('rw', db.purchases, db.products, db.suppliers, async () => {
-                // Revert stock by removing batches associated with this purchase
-                for (const item of purchaseToDelete.items) {
-                    const product = await db.products.get(item.productId);
-                    if (!product) continue;
-                    
-                    const originalBatchCount = product.batches.length;
-                    product.batches = product.batches.filter(b => b.purchaseId !== purchaseId);
-                    
-                    if (product.batches.length < originalBatchCount) {
-                       product.stock = product.batches.reduce((sum, b) => sum + b.quantity, 0);
-                       await db.products.put(product);
-                       updatedProductsMap.set(product.id, product);
+            await apiClient.performTransaction(async () => {
+                const purchase = await apiClient.getPurchaseById(purchaseId);
+                if (!purchase) throw new Error(t('purchaseNotFound'));
+
+                const productsToUpdate = await db.products.where('id').anyOf(purchase.items.map(i => i.productId)).toArray();
+
+                for (const item of purchase.items) {
+                    const product = productsToUpdate.find(p => p.id === item.productId);
+                    if (product) {
+                        const quantityInBaseUnit = item.quantity * item.unitFactor;
+                        product.stock -= quantityInBaseUnit;
+                        // Remove the specific batch associated with this purchase
+                        product.batches = product.batches.filter(b => b.purchaseId !== purchaseId);
                     }
                 }
                 
-                // Revert supplier balance
-                const amountDue = purchaseToDelete.total - purchaseToDelete.amountPaid;
-                if (amountDue > 0) {
-                    await db.suppliers.where('id').equals(purchaseToDelete.supplierId).modify(s => {
-                        s.balance -= amountDue;
-                    });
-                }
+                await apiClient.bulkUpdateProducts(productsToUpdate);
 
-                // Delete purchase
+                const balanceChange = purchase.total - purchase.amountPaid;
+                await apiClient.updateSupplierBalance(purchase.supplierId, -balanceChange);
+
                 await db.purchases.delete(purchaseId);
+                syncService.notify('purchases');
             });
+            
+            setProducts(await apiClient.getProducts());
+            setSuppliers(await apiClient.getSuppliers());
+            setPurchases(await apiClient.getPurchases());
 
-            // Update state
-            setPurchases(prev => prev.filter(p => p.id !== purchaseId));
-            setProducts(prev => prev.map(p => updatedProductsMap.get(p.id) || p));
-
-            const amountDue = purchaseToDelete.total - purchaseToDelete.amountPaid;
-            if (amountDue > 0) {
-                setSuppliers(prev => prev.map(s => s.id === purchaseToDelete.supplierId ? { ...s, balance: s.balance - amountDue } : s));
-            }
-
-        } catch(error) {
-            console.error("Failed to delete purchase:", error);
-            alert(t("deletePurchaseError"));
+        } catch (error) {
+            console.error("Error deleting purchase:", error);
+            alert(t('deletePurchaseError'));
         }
     }, [t]);
 
-    const addSupplierReturn = useCallback(async (returnData: Omit<SupplierReturn, 'id' | 'date' | 'supplierName'>) => {
-        const supplier = suppliers.find(s => s.id === returnData.supplierId);
-        if (!supplier) {
-            alert(t("supplierNotFound"));
-            return;
-        }
-
-        const newReturn: SupplierReturn = {
-            id: `SRET-${Date.now().toString().slice(-7)}`,
-            date: new Date().toISOString(),
-            supplierName: supplier.name,
-            ...returnData,
-        };
-
-        const updatedProductsMap = new Map<string, Product>();
-
+    // Supplier Returns
+    const addSupplierReturn = useCallback(async (returnData: Omit<SupplierReturn, 'id'|'date'|'supplierName'>) => {
         try {
-            await db.transaction('rw', db.supplierReturns, db.products, db.suppliers, async () => {
-                await db.supplierReturns.add(newReturn);
+            await apiClient.performTransaction(async () => {
+                const supplier = await db.suppliers.get(returnData.supplierId);
+                if (!supplier) throw new Error("Supplier not found");
 
-                for (const item of newReturn.items) {
-                    const product = await db.products.get(item.productId);
-                    if (!product) continue;
+                const newReturn: SupplierReturn = {
+                    id: `RET-${Date.now()}`,
+                    date: new Date().toISOString(),
+                    supplierName: supplier.company,
+                    ...returnData
+                };
 
-                    let quantityToDeduct = item.quantity * item.unitFactor;
-                    product.stock -= quantityToDeduct;
-
-                    // LIFO stock deduction for returns
-                    product.batches.reverse();
-                    const remainingBatches: Batch[] = [];
-                    for (const batch of product.batches) {
-                        if (quantityToDeduct <= 0) {
-                            remainingBatches.push(batch);
-                            continue;
+                const productsToUpdate = await db.products.where('id').anyOf(returnData.items.map(i => i.productId)).toArray();
+                
+                for (const item of returnData.items) {
+                    const product = productsToUpdate.find(p => p.id === item.productId);
+                    if (product) {
+                        const quantityInBaseUnit = item.quantity * item.unitFactor;
+                        product.stock -= quantityInBaseUnit;
+                        // Note: Batch management for returns is complex. Simplification: remove from latest batches.
+                        let quantityToRemove = quantityInBaseUnit;
+                        for (let i = product.batches.length - 1; i >= 0 && quantityToRemove > 0; i--) {
+                            const batch = product.batches[i];
+                            const amountToRemove = Math.min(batch.quantity, quantityToRemove);
+                            batch.quantity -= amountToRemove;
+                            quantityToRemove -= amountToRemove;
                         }
-                        if (batch.quantity > quantityToDeduct) {
-                            batch.quantity -= quantityToDeduct;
-                            quantityToDeduct = 0;
-                            remainingBatches.push(batch);
-                        } else {
-                            quantityToDeduct -= batch.quantity;
-                        }
+                        product.batches = product.batches.filter(b => b.quantity > 0);
                     }
-                    product.batches = remainingBatches.reverse();
-                    
-                    await db.products.put(product);
-                    updatedProductsMap.set(product.id, product);
                 }
                 
-                // Update supplier balance
-                await db.suppliers.where('id').equals(newReturn.supplierId).modify(s => {
-                    s.balance -= newReturn.total;
-                });
+                await apiClient.bulkUpdateProducts(productsToUpdate);
+                await apiClient.updateSupplierBalance(returnData.supplierId, -returnData.total); // Debit the supplier
+                await db.supplierReturns.add(newReturn);
+                syncService.notify('supplierReturns');
             });
-            
-            // Update state
-            setSupplierReturns(prev => [newReturn, ...prev].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
-            setProducts(prev => prev.map(p => updatedProductsMap.get(p.id) || p));
-            setSuppliers(prev => prev.map(s => s.id === newReturn.supplierId ? { ...s, balance: s.balance - newReturn.total } : s));
-        } catch(error) {
-            console.error("Failed to add supplier return:", error);
-            alert(t("addSupplierReturnError"));
+
+            setProducts(await apiClient.getProducts());
+            setSuppliers(await apiClient.getSuppliers());
+            setSupplierReturns(await apiClient.getSupplierReturns());
+        } catch (error) {
+            console.error("Error adding supplier return:", error);
+            alert(t('addSupplierReturnError'));
         }
-    }, [suppliers, t]);
+    }, [t]);
 
     const deleteSupplierReturn = useCallback(async (returnId: string) => {
-        const returnToDelete = await db.supplierReturns.get(returnId);
-        if (!returnToDelete) {
-            alert(t('supplierReturnNotFound'));
-            return;
-        }
-    
-        const updatedProductsMap = new Map<string, Product>();
-    
-        try {
-            await db.transaction('rw', db.supplierReturns, db.products, db.suppliers, async () => {
-                // Revert stock changes by adding stock back
-                for (const item of returnToDelete.items) {
-                    const product = await db.products.get(item.productId);
+         try {
+            await apiClient.performTransaction(async () => {
+                const sReturn = await apiClient.getSupplierReturnById(returnId);
+                if (!sReturn) throw new Error(t('supplierReturnNotFound'));
+
+                const productsToUpdate = await db.products.where('id').anyOf(sReturn.items.map(i => i.productId)).toArray();
+
+                for (const item of sReturn.items) {
+                    const product = productsToUpdate.find(p => p.id === item.productId);
                     if (product) {
-                        const quantityToAdd = item.quantity * item.unitFactor;
-                        product.stock += quantityToAdd;
-                        product.batches.push({
-                            id: `batch_del_sret_${returnId}_${Date.now()}`,
-                            quantity: quantityToAdd,
-                        });
-                        await db.products.put(product);
-                        updatedProductsMap.set(product.id, product);
+                        const quantityInBaseUnit = item.quantity * item.unitFactor;
+                        product.stock += quantityInBaseUnit;
+                        // Add stock back to a generic new batch
+                        product.batches.push({ id: `rev_ret_${returnId}_${item.productId}`, quantity: quantityInBaseUnit });
                     }
                 }
                 
-                // Revert supplier balance
-                await db.suppliers.where('id').equals(returnToDelete.supplierId).modify(s => {
-                    s.balance += returnToDelete.total;
-                });
-                
-                // Delete the return
+                await apiClient.bulkUpdateProducts(productsToUpdate);
+                await apiClient.updateSupplierBalance(sReturn.supplierId, sReturn.total);
                 await db.supplierReturns.delete(returnId);
+                syncService.notify('supplierReturns');
             });
             
-            // Update state
-            setSupplierReturns(prev => prev.filter(r => r.id !== returnId));
-            setProducts(prev => prev.map(p => updatedProductsMap.get(p.id) || p));
-            setSuppliers(prev => prev.map(s => s.id === returnToDelete.supplierId ? { ...s, balance: s.balance + returnToDelete.total } : s));
+            setProducts(await apiClient.getProducts());
+            setSuppliers(await apiClient.getSuppliers());
+            setSupplierReturns(await apiClient.getSupplierReturns());
         } catch (error) {
-            console.error("Failed to delete supplier return:", error);
-            alert(t("deleteSupplierReturnError"));
-        }
-    }, [t]);
-
-    const importData = useCallback(async (data: any) => {
-        try {
-            if (data.products && data.sales && data.customers) {
-                await db.transaction('rw', db.tables, async () => {
-                    await Promise.all(db.tables.map(table => table.clear()));
-                    for (const tableName of Object.keys(data)) {
-                        if (db.table(tableName)) {
-                            await db.table(tableName).bulkAdd(data[tableName]);
-                        }
-                    }
-                });
-                alert(t('importSuccess'));
-                window.location.reload(); 
-            } else {
-                alert(t('importInvalidFile'));
-            }
-        } catch (error) {
-            alert(t('importProcessError'));
-            console.error("Import failed", error);
+            console.error("Error deleting supplier return:", error);
+            alert(t('deleteSupplierReturnError'));
         }
     }, [t]);
 
     const addUser = useCallback(async (user: Omit<User, 'id'>) => {
-        const newUser: User = { id: `USR-${Date.now().toString().slice(-7)}`, ...user };
-        await db.users.add(newUser);
-        setUsers(prev => [newUser, ...prev]);
+        await apiClient.addUser(user);
+        setUsers(await apiClient.getUsers());
     }, []);
 
-    const updateUser = useCallback(async (updatedUser: User) => {
-        await db.users.put(updatedUser);
-        setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-        if (currentUser?.id === updatedUser.id) {
-            setCurrentUser(updatedUser);
-            window.sessionStorage.setItem('pos_current_user', JSON.stringify(updatedUser));
-        }
-    }, [currentUser]);
+    const updateUser = useCallback(async (user: User) => {
+        await apiClient.updateUser(user);
+        setUsers(await apiClient.getUsers());
+    }, []);
 
     const deleteUser = useCallback(async (userId: string) => {
         if (currentUser?.id === userId) {
             alert(t('cannotDeleteCurrentUser'));
             return;
         }
-        await db.users.delete(userId);
-        setUsers(prev => prev.filter(u => u.id !== userId));
+        await apiClient.deleteUser(userId);
+        setUsers(await apiClient.getUsers());
     }, [currentUser, t]);
 
     const startSession = useCallback(async (openingFloat: number) => {
-        if (!currentUser) {
-            alert(t('noCurrentUser'));
-            return;
-        }
-        if (workSessions.some(s => s.status === 'active')) {
-            alert(t('sessionAlreadyActive'));
-            return;
-        }
+        if (!currentUser) { alert(t('noCurrentUser')); return; }
+        const activeSession = workSessions.find(s => s.status === 'active');
+        if (activeSession) { alert(t('sessionAlreadyActive')); return; }
+        
         const newSession: WorkSession = {
-            id: `SES-${Date.now().toString().slice(-7)}`,
+            id: `SESS-${Date.now()}`,
             startTime: new Date().toISOString(),
             endTime: null,
             openingFloat,
@@ -1103,53 +885,35 @@ const usePosState = () => {
             userId: currentUser.id,
             userName: currentUser.username,
         };
-        await db.workSessions.add(newSession);
-        setWorkSessions(prev => [newSession, ...prev]);
+        await apiClient.addWorkSession(newSession);
+        setWorkSessions(await apiClient.getWorkSessions());
     }, [currentUser, workSessions, t]);
 
-    const addExpense = useCallback(async (expenseData: { amount: number; reason: string }) => {
+    const addExpense = useCallback(async (expense: { amount: number; reason: string }) => {
         const activeSession = workSessions.find(s => s.status === 'active');
-        if (!activeSession) {
-            alert(t('mustStartSessionFirst'));
-            return;
-        }
+        if (!activeSession) { alert(t('mustStartSessionFirst')); return; }
+        
         const newExpense: Expense = {
-            id: `EXP-${Date.now().toString().slice(-7)}`,
+            id: `EXP-${Date.now()}`,
             sessionId: activeSession.id,
             date: new Date().toISOString(),
-            ...expenseData,
+            ...expense,
         };
-        await db.expenses.add(newExpense);
-        setExpenses(prev => [newExpense, ...prev]);
+        await apiClient.addExpense(newExpense);
+        setExpenses(await apiClient.getExpenses());
     }, [workSessions, t]);
 
     const endSession = useCallback(async (closingFloat: number) => {
         const activeSession = workSessions.find(s => s.status === 'active');
-        if (!activeSession) {
-            alert(t('noActiveSessionToEnd'));
-            return;
-        }
+        if (!activeSession) { alert(t('noActiveSessionToEnd')); return; }
 
-        const sessionSales = await db.sales.where('date').between(activeSession.startTime, new Date().toISOString()).toArray();
-        const sessionExpenses = await db.expenses.where('sessionId').equals(activeSession.id).toArray();
-
-        const totalCashSales = sessionSales.reduce((sum, sale) => {
-            const cashPayment = sale.payments.find(p => p.method === 'cash');
-            return sum + (cashPayment?.amount || 0);
-        }, 0);
+        const sessionSales = await apiClient.getSalesBetweenDates(activeSession.startTime, new Date().toISOString());
+        const sessionExpenses = await apiClient.getExpensesBySessionId(activeSession.id);
         
-        const totalCardSales = sessionSales.reduce((sum, sale) => {
-             const cardPayments = sale.payments.filter(p => p.method === 'card');
-            return sum + cardPayments.reduce((s, p) => s + p.amount, 0);
-        }, 0);
-        
-        const totalDeferredSales = sessionSales.reduce((sum, sale) => {
-            const deferredPayment = sale.payments.find(p => p.method === 'deferred');
-            return sum + (deferredPayment?.amount || 0);
-        }, 0);
-        
+        const totalCashSales = sessionSales.reduce((sum, sale) => sum + (sale.payments.find(p => p.method === 'cash')?.amount || 0), 0);
+        const totalCardSales = sessionSales.reduce((sum, sale) => sum + (sale.payments.find(p => p.method === 'card')?.amount || 0), 0);
+        const totalDeferredSales = sessionSales.reduce((sum, sale) => sum + (sale.payments.find(p => p.method === 'deferred')?.amount || 0), 0);
         const totalExpenses = sessionExpenses.reduce((sum, exp) => sum + exp.amount, 0);
-
         const expectedCash = activeSession.openingFloat + totalCashSales - totalExpenses;
         const difference = closingFloat - expectedCash;
 
@@ -1163,28 +927,122 @@ const usePosState = () => {
             totalDeferredSales,
             totalExpenses,
             expectedCash,
-            difference,
+            difference
         };
-
-        await db.workSessions.put(updatedSession);
-        setWorkSessions(prev => prev.map(s => s.id === updatedSession.id ? updatedSession : s));
+        
+        await apiClient.updateWorkSession(updatedSession);
+        setWorkSessions(await apiClient.getWorkSessions());
     }, [workSessions, t]);
+
+    // Settings handlers
+    const updateTaxRate = useCallback(async (newRate: number) => {
+        await apiClient.putSetting({ key: 'taxRate', value: newRate });
+        setTaxRate(newRate);
+    }, []);
+    
+    const updateShowTaxInReceipt = useCallback(async (show: boolean) => {
+        await apiClient.putSetting({ key: 'showTaxInReceipt', value: show });
+        setShowTaxInReceipt(show);
+    }, []);
+
+    const updateStoreInfo = useCallback(async (info: Partial<typeof storeInfo>) => {
+        const newInfo = { ...storeInfo, ...info };
+        await apiClient.putSetting({ key: 'storeInfo', value: newInfo });
+        setStoreInfo(newInfo);
+    }, [storeInfo]);
+
+    const updateSyncServerUrl = useCallback(async (url: string) => {
+        await apiClient.putSetting({ key: 'syncServerUrl', value: url });
+        setSyncServerUrl(url);
+        syncService.initialize(url, setSyncStatus);
+    }, []);
+    
+    const updateAutoBackupTime = useCallback(async (time: string) => {
+        await apiClient.putSetting({ key: 'autoBackupTime', value: time });
+        setAutoBackupTime(time);
+    }, []);
+
+    const setBackupDirectory = useCallback(async () => {
+        if ('showDirectoryPicker' in window) {
+            try {
+                // FIX: Cast window to 'any' to resolve missing type definition for showDirectoryPicker.
+                const handle = await (window as any).showDirectoryPicker();
+                await db.settings.put({ key: 'backupDirectoryHandle', value: handle });
+                setBackupDirectoryHandle(handle);
+                alert(t('settingsFolderSetSuccess'));
+            } catch (err) {
+                console.error('Error selecting directory:', err);
+            }
+        } else {
+            alert(t('settingsFileSystemNotSupported'));
+        }
+    }, [t]);
+
+    const clearBackupDirectory = useCallback(async () => {
+        await db.settings.delete('backupDirectoryHandle');
+        setBackupDirectoryHandle(null);
+        alert(t('settingsFolderCleared'));
+    }, [t]);
+
+
+    const importData = useCallback(async (blob: Blob) => {
+        try {
+          // FIX: The `importDB` function from newer versions of `dexie-export-import` 
+          // does not take the database instance as the first argument. It infers the
+          // database name from the blob.
+          await importDB(blob, {
+            clearTablesBeforeImport: true,
+            overwriteValues: true,
+          });
+          alert(t('importSuccess'));
+          window.location.reload();
+        } catch (error) {
+          console.error('Import failed (with decompression):', error);
+          if (error instanceof Error && error.message.includes('r.eof is not a function')) {
+            console.log('Retrying import without decompression...');
+            try {
+              // FIX: The `importDB` function from newer versions of `dexie-export-import` 
+              // does not take the database instance as the first argument. It infers the
+              // database name from the blob.
+              await importDB(blob, {
+                clearTablesBeforeImport: true,
+                overwriteValues: true,
+                noDecompression: true,
+              });
+              alert(t('importSuccess'));
+              window.location.reload();
+            } catch (retryError) {
+              console.error('Import failed (without decompression):', retryError);
+              alert(t('importFailed', (retryError as Error).message));
+            }
+          } else {
+            alert(t('importFailed', (error as Error).message));
+          }
+        }
+    }, [t]);
+
+    const deleteAutoBackup = useCallback(async (id: string) => {
+        await db.autoBackups.delete(id);
+        await fetchAutoBackups();
+    }, [fetchAutoBackups]);
+
+    const restoreAutoBackup = useCallback(async (id: string) => {
+        const backup = await db.autoBackups.get(id);
+        if (backup) {
+          await importData(backup.blob);
+        } else {
+            alert(t('backupNotFound'));
+        }
+    }, [importData, t]);
 
 
     return {
-        isLoading,
-        products, cart, sales, customers, suppliers, taxRate, customerPayments, categories,
-        supplierPayments, showTaxInReceipt, notifications, storeInfo, parkedSales,
-        adjustments, users, currentUser, workSessions, expenses,
-        purchases, supplierReturns,
-        login, logout, addUser, updateUser, deleteUser, dismissNotification,
-        addToCart, updateCartQuantity, removeFromCart, clearCart, completeSale,
-        addProduct, updateProduct, deleteProduct, addCustomer, updateCustomer, deleteCustomer,
-        addSupplier, updateSupplier, deleteSupplier, updateTaxRate, addCustomerPayment,
-        addCategory, updateCategory, deleteCategory, updateSale, addSupplierPayment,
-        updateShowTaxInReceipt, updateStoreInfo, parkSale, retrieveSale, deleteParkedSale,
-        addAdjustment, addPurchase, deletePurchase, importData, startSession, addExpense, endSession,
-        addSupplierReturn, deleteSupplierReturn,
+        products, cart, sales, customers, suppliers, categories, notifications, parkedSales, adjustments, purchases, supplierReturns, users, currentUser, workSessions, expenses, taxRate, showTaxInReceipt, storeInfo, isLoading, syncServerUrl, syncStatus, autoBackups, customerPayments, supplierPayments, autoBackupTime, backupDirectoryHandle,
+        addToCart, updateCartQuantity, removeFromCart, clearCart, completeSale, updateSale, dismissNotification, parkSale, retrieveSale, deleteParkedSale, addProduct, updateProduct, deleteProduct,
+        addCategory, updateCategory, deleteCategory, addCustomer, updateCustomer, deleteCustomer, addCustomerPayment,
+        addSupplier, updateSupplier, deleteSupplier, addSupplierPayment, addAdjustment, addPurchase, deletePurchase, addSupplierReturn, deleteSupplierReturn,
+        login, logout, addUser, updateUser, deleteUser, startSession, addExpense, endSession, updateTaxRate, updateShowTaxInReceipt, updateStoreInfo, updateSyncServerUrl, updateAutoBackupTime,
+        importData, deleteAutoBackup, restoreAutoBackup, setBackupDirectory, clearBackupDirectory
     };
 };
 

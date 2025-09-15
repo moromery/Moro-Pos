@@ -136,14 +136,14 @@ const PaymentModal: React.FC<{
 
 
 const Suppliers: React.FC<SupplierProps> = ({ suppliers, addSupplier, updateSupplier, deleteSupplier, addSupplierPayment, onViewProfile }) => {
-    const { t } = useTranslation();
+    const { t, language, currency } = useTranslation();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
     const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
     const [supplierToDelete, setSupplierToDelete] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
-    const formatCurrency = (amount: number) => new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(amount);
+    const formatCurrency = (amount: number) => new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
 
     const handleSaveSupplier = (supplierData: Supplier | Omit<Supplier, 'id' | 'balance'>) => {
         if ('id' in supplierData) {

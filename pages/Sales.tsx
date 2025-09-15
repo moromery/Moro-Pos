@@ -17,7 +17,7 @@ interface SalesProps {
 }
 
 const Sales: React.FC<SalesProps> = ({ sales, products, updateSale, customers, storeInfo, showTaxInReceipt }) => {
-  const { t, language } = useTranslation();
+  const { t, language, currency } = useTranslation();
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [saleToExport, setSaleToExport] = useState<Sale | null>(null);
   const [saleToPrint, setSaleToPrint] = useState<Sale | null>(null);
@@ -83,7 +83,7 @@ const Sales: React.FC<SalesProps> = ({ sales, products, updateSale, customers, s
   }, [sales, filters]);
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: 'EGP' }).format(amount);
+    return new Intl.NumberFormat(language === 'ar' ? 'ar-EG' : 'en-US', { style: 'currency', currency: currency }).format(amount);
   };
   
   const handleExportExcel = () => {
